@@ -11,6 +11,7 @@ import { LabView, QuizBox, TeachBackBox, AIGraderBox } from './components/Labs.j
 import { TutorChatButton, TutorChat } from './components/TutorChat.jsx'
 import { ChatDock } from './components/ChatDock.jsx'
 import { IncidentDrill } from './components/IncidentDrill.jsx'
+import { PromptStudioView } from './components/PromptStudio.jsx'
 import { enrichDay, ALL_DAYS, DAY_BY_ID } from './dayIndex.js'
 
 const DAY_TABS = ['learn', 'do', 'flash', 'check', 'explain', 'lab']
@@ -275,6 +276,7 @@ function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, 
       <button className={tab === 'check' ? 'btn small' : 'btn ghost small'} onClick={() => setTab('check')}>Tự chấm</button>
       <button className={tab === 'explain' ? 'btn small' : 'btn ghost small'} onClick={() => setTab('explain')}>Giải thích khái niệm</button>
       <button className={tab === 'lab' ? 'btn small' : 'btn ghost small'} onClick={() => setTab('lab')}>Lab thực hành</button>
+      <button className="btn ghost small" onClick={() => go('prompt')}>🤖 Prompt cho agent</button>
       <button className="btn ghost small" onClick={() => window.print()}>In / Lưu PDF ngày này</button>
     </div>
     {toast && <div className="banner" role="status">{toast}</div>}
@@ -660,7 +662,7 @@ export default function App() {
   const setPomoDur = (dur) => setPomo(prev => ({ ...prev, sec: dur, duration: dur, run: false, started: false }))
   return <div>
     <header className="topbar"><div className="topbar-in"><div className="logo">BE<span>App</span> <small style={{ fontSize: 13, color: '#93a0be' }}>· 30 ngày Backend Senior</small></div>
-      <nav className="nav"><button className={view === 'home' ? 'on' : ''} onClick={() => go('home')}>Trang chính</button><button className={view === 'timeline' ? 'on' : ''} onClick={() => go('timeline')}>Timeline</button><button className={view === 'review' ? 'on' : ''} onClick={() => go('review')}>Hôm nay ôn gì</button><button className={view === 'mock' ? 'on' : ''} onClick={() => go('mock')}>Phỏng vấn</button><button className={view === 'search' ? 'on' : ''} onClick={() => go('search')}>Tìm kiếm</button><button className={view === 'settings' ? 'on' : ''} onClick={() => go('settings')}>Cài đặt</button></nav>
+      <nav className="nav"><button className={view === 'home' ? 'on' : ''} onClick={() => go('home')}>Trang chính</button><button className={view === 'timeline' ? 'on' : ''} onClick={() => go('timeline')}>Timeline</button><button className={view === 'review' ? 'on' : ''} onClick={() => go('review')}>Hôm nay ôn gì</button><button className={view === 'mock' ? 'on' : ''} onClick={() => go('mock')}>Phỏng vấn</button><button className={view === 'prompt' ? 'on' : ''} onClick={() => go('prompt')}>Prompt Agent</button><button className={view === 'search' ? 'on' : ''} onClick={() => go('search')}>Tìm kiếm</button><button className={view === 'settings' ? 'on' : ''} onClick={() => go('settings')}>Cài đặt</button></nav>
       <button className={`focus-toggle ${s.focusMode ? 'on' : ''}`} title="Chế độ tập trung: ẩn điều hướng, tự chạy Pomodoro khi vào ngày học, hết phiên nhảy vào bài tập" onClick={() => patch({ focusMode: !s.focusMode })}>🎯 {s.focusMode ? 'Tắt tập trung' : 'Tập trung'}</button>
     </div></header>
     <main className="wrap view" key={view}>
@@ -679,6 +681,7 @@ export default function App() {
         {view === 'review' && <ReviewView go={go} s={s} />}
         {view === 'day' && <DayView day={day} go={go} p={p} pomo={pomo} onTogglePomo={togglePomo} onResetPomo={resetPomo} onSetPomo={setPomoDur} tab={dayTab} setTab={setDayTab} />}
         {view === 'mock' && <MockInterviewView go={go} s={s} />}
+        {view === 'prompt' && <PromptStudioView s={s} dayId={dayId} />}
         {view === 'search' && <SearchView go={go} s={s} initialQ={searchQ} />}
         {view === 'settings' && <Settings p={p} />}
       </Boundary>

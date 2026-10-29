@@ -174,3 +174,8 @@ body.light .progress,body.light .mastery-bar{background:#e3e8f2}
 body.light .hm{background:#e8ecf5;color:#5a6272}
 body.light .flash-face{background:var(--panel)}
 body.light .paper{border:1px solid #ddd6c6}
+
+/* Prompt Studio: form trái, preview prompt phải */
+.ps-cols{display:grid;grid-template-columns:1fr 1.15fr;gap:14px;align-items:start}
+@media(max-width:960px){.ps-cols{grid-template-columns:1fr}}
+.chip.on{border-color:var(--acc);color:var(--acc);font-weight:700}
