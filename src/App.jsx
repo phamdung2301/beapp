@@ -1,27 +1,19 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react'
-import { DAYS, WEEKS, REVIEW_CHECKLIST, CAPSTONE_RUBRIC } from './data/days.js'
-import { DAY_EXTRA } from './data/dayExtra.js'
+import { WEEKS, REVIEW_CHECKLIST, CAPSTONE_RUBRIC } from './data/days.js'
 import { CONCEPT_EXPLAIN } from './data/conceptExplain.js'
 import { QUIZ_EXTRA } from './data/quizExtra.js'
 import { LABS } from './data/labs.js'
+import { DRILLS } from './data/drills.js'
 import { PROVIDERS, detectProvider, defaultModelFor, listModels } from './llm.js'
 import { useProgress, useReveal, streakOf, addDays, todayStr, sm2Next, masteryLevel } from './store.js'
 import { LogSimulator, SpecCalculator, MisconceptionCorner } from './components/Day1Interactive.jsx'
-import { LabView, QuizBox, TeachBackBox } from './components/Labs.jsx'
-import { TutorChat } from './components/TutorChat.jsx'
+import { LabView, QuizBox, TeachBackBox, AIGraderBox } from './components/Labs.jsx'
+import { TutorChatButton, TutorChat } from './components/TutorChat.jsx'
+import { ChatDock } from './components/ChatDock.jsx'
+import { IncidentDrill } from './components/IncidentDrill.jsx'
+import { enrichDay, ALL_DAYS, DAY_BY_ID } from './dayIndex.js'
 
-export function enrichDay(day) {
-  const ex = DAY_EXTRA[day.id]
-  if (!ex) return day
-  return {
-    ...day,
-    concepts: day.concepts.map((c, i) => ({ ...c, ...(ex.conceptExtras?.[i] || {}) })).concat(ex.extraConcepts || []),
-    exercises: day.exercises.map((e, i) => ({ ...e, ...(ex.exerciseExtras?.[i] || {}) })),
-    links: ex.links || [],
-  }
-}
-const ALL_DAYS = DAYS.map(enrichDay)
-const DAY_BY_ID = Object.fromEntries(ALL_DAYS.map(d => [d.id, d]))
+const DAY_TABS = ['learn', 'do', 'flash', 'check', 'explain', 'lab']
 
 function dayProgress(s, day) {
   const notesCount = day.exercises.filter((_, i) => (s.notes?.[`${day.id}-${i}`] || '').trim()).length
@@ -42,6 +34,16 @@ function buildReviewQueue(s) {
     if (r && r.status === 'unknown' && r.due <= today) push(`c-${d.id}-${i}`, { day: d, concept: c, due: r.due, reason: 'Thẻ flashcard chưa thuộc, đến hạn ôn', tab: 'flash' })
   }))
   ALL_DAYS.forEach(d => { if (s.scores[d.id] !== undefined && s.scores[d.id] <= 2) push(`d-${d.id}`, { day: d, concept: null, due: null, reason: `Điểm tự chấm thấp (${s.scores[d.id]}/5)`, tab: 'check' }) })
+  // Nhắc đọc lại teach-back sau 7 ngày kể từ lần viết (hoặc lần đọc lại gần nhất):
+  // bản giải thích bằng lời của mình, đọc lại sau 1 tuần để thấy mình hiểu sâu hơn chưa.
+  ALL_DAYS.forEach(d => d.concepts.forEach((c, i) => {
+    const tb = s.teachBack?.[`${d.id}-${i}`]
+    if (!tb?.text) return
+    const last = tb.reReadAt || tb.at
+    if (!last) return
+    const due = addDays(String(last).slice(0, 10), 7)
+    if (due <= today) push(`tb-${d.id}-${i}`, { day: d, concept: c, due, reason: `Đọc lại bản teach-back viết ${fmtDate(String(last).slice(0, 10))}`, tab: 'explain' })
+  }))
   ALL_DAYS.forEach(d => { const p = dayProgress(s, d); if (!s.done[d.id] && p.ticked < p.totalCriteria && p.inProgress) push(`p-${d.id}`, { day: d, concept: null, due: null, reason: `Còn ${p.totalCriteria - p.ticked} tiêu chí chưa tick`, tab: 'do' }) })
   // Thẻ mới gợi ý: khái niệm đầu tiên của ngày chưa xong mà chưa từng ôn.
   const next = ALL_DAYS.find(d => !s.done[d.id])
@@ -62,17 +64,19 @@ function buildReviewQueue(s) {
 function masteryStats(s) {
   let total = 0, ok = 0, explained = 0
   const weak = []
+  const lvCounts = { 'chưa học': 0, 'đã đọc': 0, 'luyện được': 0, 'giải thích được': 0 }
   ALL_DAYS.forEach(d => d.concepts.forEach((c, i) => {
     total++
     const m = s.mastery?.[`${d.id}-${i}`]
     const lv = masteryLevel(m)
+    lvCounts[lv] = (lvCounts[lv] || 0) + 1
     if (lv === 'luyện được' || lv === 'giải thích được') ok++
     if (lv === 'giải thích được') explained++
     const r = s.srs2?.[`${d.id}-${i}`]
     if ((r?.lapses || 0) > 0 || s.srs?.[`${d.id}-${i}`]?.status === 'unknown') weak.push({ day: d, concept: c, lapses: r?.lapses || 0 })
   }))
   weak.sort((a, b) => b.lapses - a.lapses)
-  return { total, ok, explained, weak: weak.slice(0, 3) }
+  return { total, ok, explained, weak: weak.slice(0, 3), lvCounts }
 }
 function fmtDate(iso) { if (!iso) return ''; const d = new Date(iso + 'T00:00:00'); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}` }
 function fmtTime(iso) { if (!iso) return ''; const d = new Date(iso); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
@@ -93,6 +97,13 @@ function PomodoroCard({ pomo, onToggle, onReset, onSet }) {
   const mm = String(Math.floor(pomo.sec / 60)).padStart(2, '0'), ss = String(pomo.sec % 60).padStart(2, '0')
   return <div className="card"><strong>Pomodoro tập trung</strong><div className="stat">{mm}:{ss}</div><div className="row"><button className="btn small" onClick={onToggle}>{pomo.run ? 'Tạm dừng' : 'Bắt đầu'}</button><button className="btn ghost small" onClick={() => onReset(25 * 60)}>Đặt lại 25 phút</button><button className="btn ghost small" onClick={() => onReset(50 * 60)}>50 phút</button><button className="btn ghost small" onClick={() => onSet(25 * 60)}>Chọn 25 phút</button></div><p className="mut">Đồng hồ này sống ở cấp app, đổi tab không bị reset. Hết 1 phiên thì ghi 1 dòng kết quả vào ghi chú bài tập, đừng chỉ bấm đồng hồ.</p></div>
 }
+const MASTERY_LEVELS = [
+  { id: 'chưa học', color: '#232b3f' },
+  { id: 'đã đọc', color: '#8b7cff' },
+  { id: 'luyện được', color: '#7aa32b' },
+  { id: 'giải thích được', color: '#c6f24e' },
+]
+
 function Dashboard({ go, s }) {
   const doneCount = Object.keys(s.done).length
   const pct = Math.round(doneCount / 30 * 100)
@@ -112,7 +123,10 @@ function Dashboard({ go, s }) {
     </div></section>
     <div className="marquee" aria-hidden="true"><div>{'JVM · Spring Boot · REST · DTO · SQL · JPA · MongoDB · Redis · Kafka · Saga · Resilience · CAP · DDD · OAuth2 · Observability · Docker · Testing · ADR · '.repeat(3)}</div></div>
     <div className="grid">
-      <div className="card reveal"><Ring pct={pct} /><p><strong>{doneCount}/30 ngày đã xong · {exDone}/{exTotal} bài tập đã có ghi chú</strong><br /><span className="mut">Streak: {streakOf(s.done)} ngày · Điểm tự chấm trung bình: {avg}/5 · Pomodoro đã xong: {s.pomodoroDone || 0} phiên{s.pomodoroMinutes ? ` (${s.pomodoroMinutes} phút tập trung)` : ''}{s.pomodoroInterrupted ? `, ${s.pomodoroInterrupted} phiên dở` : ''}</span></p><p className="mut">Thông thạo (từ quiz + lab + teach-back, không phải tick): {ms.ok}/{ms.total} khái niệm luyện được, trong đó {ms.explained} giải thích được.{ms.weak.length > 0 && <> Điểm yếu nhất: {ms.weak.map(w => `Ngày ${w.day.id} — ${w.concept.t}`).join('; ')}.</>}</p><div className="progress"><i style={{ width: pct + '%' }} /></div></div>
+      <div className="card reveal"><Ring pct={pct} /><p><strong>{doneCount}/30 ngày đã xong · {exDone}/{exTotal} bài tập đã có ghi chú</strong><br /><span className="mut">Streak: {streakOf(s.done)} ngày · Điểm tự chấm trung bình: {avg}/5 · Pomodoro đã xong: {s.pomodoroDone || 0} phiên{s.pomodoroMinutes ? ` (${s.pomodoroMinutes} phút tập trung)` : ''}{s.pomodoroInterrupted ? `, ${s.pomodoroInterrupted} phiên dở` : ''}</span></p><p className="mut">Thông thạo (từ quiz + lab + teach-back, không phải tick): {ms.ok}/{ms.total} khái niệm luyện được, trong đó {ms.explained} giải thích được.{ms.weak.length > 0 && <> Điểm yếu nhất: {ms.weak.map(w => `Ngày ${w.day.id} — ${w.concept.t}`).join('; ')}.</>}</p>
+        <div className="mastery-bar" aria-label="Phân bố mức thông thạo">{MASTERY_LEVELS.map(lv => { const n = ms.lvCounts?.[lv.id] || 0; return <i key={lv.id} style={{ width: (n / Math.max(1, ms.total) * 100) + '%', background: lv.color }} title={`${lv.id}: ${n} khái niệm`} /> })}</div>
+        <div className="row" style={{ marginTop: 6 }}>{MASTERY_LEVELS.map(lv => <small key={lv.id} className="mut" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><i style={{ width: 10, height: 10, borderRadius: 3, background: lv.color, display: 'inline-block' }} />{lv.id} ({ms.lvCounts?.[lv.id] || 0})</small>)}</div>
+        <div className="progress" style={{ marginTop: 10 }}><i style={{ width: pct + '%' }} /></div></div>
       <div className="card reveal"><div className="eyebrow">Hôm nay nên học</div><h3>Ngày {next.id} — {next.title}</h3><p className="mut">{next.goal}</p>
         {s.startDate && <p className="mut">Lịch của bạn: Ngày 1 = {fmtDate(s.startDate)}, Ngày 7 = {fmtDate(addDays(s.startDate, 6))}, Ngày 30 = {fmtDate(addDays(s.startDate, 29))}.</p>}
         <button className="btn small" onClick={() => go('day', next.id)}>Vào ngày này</button></div>
@@ -122,6 +136,8 @@ function Dashboard({ go, s }) {
         <button className="btn ghost small" onClick={() => go('review')}>Xem tất cả →</button></div>
       <div className="card reveal"><div className="eyebrow">Cài app lên laptop</div><p>Mở web này bằng Chrome hoặc Edge, chọn Install app / Cài đặt ứng dụng. Biểu tượng sẽ xuất hiện ngoài desktop và taskbar, mở thành cửa sổ riêng và chạy offline.</p><button className="btn ghost small" onClick={() => go('settings')}>Hướng dẫn cài đặt</button></div>
     </div>
+    <h2 style={{ marginTop: 28 }}>Bản đồ 30 ngày</h2>
+    <div className="card reveal"><div className="heatmap">{ALL_DAYS.map(d => { const pr = dayProgress(s, d); const sc = s.scores[d.id]; return <button key={d.id} className={`hm ${s.done[d.id] ? 'done' : pr.inProgress ? 'progress' : ''}`} style={sc !== undefined ? { background: `rgba(198,242,78,${(0.08 + sc * 0.14).toFixed(2)})` } : undefined} title={`Ngày ${d.id}: ${d.title}${sc !== undefined ? ` · tự chấm ${sc}/5` : ''}`} onClick={() => go('day', d.id)}>{d.id}</button> })}</div><p className="mut">Màu càng đậm = điểm tự chấm càng cao. Viền xanh = đã xong, viền cam = đang làm dở. Bấm vào ô để vào ngày đó.</p></div>
     <h2 style={{ marginTop: 28 }}>5 tuần, nhìn 1 lần là nhớ</h2>
     <div className="grid">{WEEKS.map(w => <div className="card reveal" key={w.n}><div className="eyebrow">Tuần {w.n}</div><h3>{w.name}</h3><p className="mut">Ngày {w.days[0]}–{w.days[w.days.length - 1]} · {w.days.filter(id => s.done[id]).length}/{w.days.length} ngày xong</p><button className="btn ghost small" onClick={() => go('timeline', undefined, w.n)}>Xem tuần này</button></div>)}</div>
   </div>
@@ -160,7 +176,7 @@ function SearchView({ go, s, initialQ }) {
       return base || noteHits.length ? { d, noteHits, conceptHit, labHit, explainHit } : null
     }).filter(Boolean)
   }, [q, s.notes])
-  return <div><h2>Tìm kiếm toàn app</h2><input style={{ width: '100%', padding: 12 }} placeholder="Gõ ít nhất 2 ký tự, ví dụ: JWT, Saga, N+1, cache, stampede, idempotent…" value={q} onChange={e => setQ(e.target.value)} />
+  return <div><h2>Tìm kiếm toàn app</h2><input id="search-input" style={{ width: '100%', padding: 12 }} placeholder="Gõ ít nhất 2 ký tự (phím tắt /), ví dụ: JWT, Saga, N+1, cache, stampede, idempotent…" value={q} onChange={e => setQ(e.target.value)} />
     <p className="mut">Tìm trong tiêu đề, mục tiêu, khái niệm, bài tập, ghi chú của bạn, giải thích sâu và lab.</p>
     {q.trim().length >= 2 && <p className="mut">{res.length} kết quả</p>}
     <div className="grid">{res.map(({ d, noteHits, conceptHit, labHit, explainHit }) => <div className="card" key={d.id}><div className="eyebrow">Ngày {d.id}</div><h3><Highlight text={d.title} q={q} /></h3><p className="mut"><Highlight text={d.goal} q={q} /></p>{conceptHit && <p className="mut">Khớp khái niệm: <Highlight text={conceptHit.t} q={q} /></p>}{explainHit && <p className="mut">Khớp trong giải thích sâu của ngày này.</p>}{labHit && <p className="mut">Khớp lab: {labHit.title}.</p>}{noteHits.length > 0 && <p className="mut">Khớp {noteHits.length} ghi chú của bạn ở ngày này.</p>}<button className="btn small" onClick={() => go('day', d.id)}>Vào ngày này</button></div>)}</div>
@@ -225,7 +241,7 @@ function ExplainView({ day, go, s, patch }) {
         <ul>{e.connects.map((cn, j) => <li key={j}>{cn.t}{typeof cn.day === 'number' && <> <button className="btn ghost small" onClick={() => go('day', cn.day, undefined, 'explain')}>→ Ngày {cn.day}: {DAY_BY_ID[cn.day]?.title || ''}</button></>}</li>)}</ul>
         <QuizBox quiz={e.quiz || QUIZ_EXTRA[`${day.id}-${i}`]} mKey={`${day.id}-${i}`} s={s} patch={patch} />
         <TeachBackBox cKey={`${day.id}-${i}`} c={c} e={e} s={s} patch={patch} />
-        <TutorChat s={s} day={day} kind="concept" index={i} />
+        <TutorChatButton day={day} kind="concept" index={i} />
       </div>}
     </div>)}
     {items.length === 0 && <p className="mut">Không có khái niệm nào khớp với từ khóa này trong ngày {day.id}. Hãy thử từ khóa khác hoặc tìm toàn app.</p>}
@@ -276,11 +292,18 @@ function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, 
       <div style={{ marginTop: 16 }}><PomodoroCard pomo={pomo} onToggle={onTogglePomo} onReset={onResetPomo} onSet={onSetPomo} /></div>
     </div>}
     {tab === 'do' && <div style={{ marginTop: 16 }}>
+      {DRILLS[day.id] && <IncidentDrill drill={DRILLS[day.id]} />}
       {day.id === 1 && <p className="mut">Lưu ý cho Bài 1: thứ tự liệt kê trong đề (thread → connection → cache) chỉ là danh sách, không phải thứ tự kiểm chứng. Thứ tự kiểm chứng luôn theo bằng chứng mạnh nhất trong log bạn đang cầm — hãy làm Log Simulator dưới đây trước khi viết ghi chú.</p>}
       {day.exercises.map((e, i) => {
         const key = `${day.id}-${i}`
         const note = s.notes[key] || ''
         const words = note.trim() ? note.trim().split(/\s+/).length : 0
+        const body = <>
+          <label>Ghi chú / output của bạn</label>
+          <textarea value={note} onChange={ev => setNote(key, ev.target.value)} placeholder="Viết output ở đây: sơ đồ, contract, bảng review, ADR… Người khác đọc được mới tính là xong." />
+          <p className="mut">{words} từ · {s.notesSavedAt?.[key] ? `Đã lưu lúc ${fmtTime(s.notesSavedAt[key])}` : 'Chưa lưu gì'} · <button className="btn ghost small" onClick={() => setPreview(prevP => ({ ...prevP, [key]: !prevP[key] }))}>{preview[key] ? 'Sửa tiếp' : 'Xem trước markdown'}</button></p>
+          {preview[key] && <div className="paper" style={{ padding: 14 }} dangerouslySetInnerHTML={{ __html: mdPreview(note || '(Chưa có ghi chú)') }} />}
+        </>
         return <React.Fragment key={i}>
           {day.id === 1 && i === 0 && <LogSimulator />}
           {day.id === 1 && i === 1 && <SpecCalculator onInsert={(text) => { appendNote(`${day.id}-1`, text); showToast('Đã chèn spec đã tính vào cuối ghi chú Bài 2.') }} />}
@@ -288,13 +311,14 @@ function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, 
           {e.material && <details open><summary><strong>Gói vật liệu để làm bài (không cần app thật)</strong></summary><pre className="code">{e.material}</pre></details>}
           <div className="row"><button className="btn ghost small" onClick={() => copyTemplate(e.template)}>Sao chép template</button><button className="btn ghost small" onClick={() => { appendNote(key, e.template); showToast('Đã chèn template vào cuối ghi chú. Bấm Hoàn tác nếu muốn trở lại bản trước.') }}>Chèn template vào cuối ghi chú</button>
             {s.noteUndo?.[key] !== undefined && <button className="btn ghost small" onClick={() => { undoNote(key); showToast('Đã hoàn tác lần chèn vừa rồi.') }}>Hoàn tác lần chèn vừa rồi</button>}</div>
-          <label>Ghi chú / output của bạn</label>
-          <textarea value={note} onChange={ev => setNote(key, ev.target.value)} placeholder="Viết output ở đây: sơ đồ, contract, bảng review, ADR… Người khác đọc được mới tính là xong." />
-          <p className="mut">{words} từ · {s.notesSavedAt?.[key] ? `Đã lưu lúc ${fmtTime(s.notesSavedAt[key])}` : 'Chưa lưu gì'} · <button className="btn ghost small" onClick={() => setPreview(prevP => ({ ...prevP, [key]: !prevP[key] }))}>{preview[key] ? 'Sửa tiếp' : 'Xem trước markdown'}</button></p>
-          {preview[key] && <div className="paper" style={{ padding: 14 }} dangerouslySetInnerHTML={{ __html: mdPreview(note || '(Chưa có ghi chú)') }} />}
-          {e.rubric && <div className="banner" style={{ marginTop: 10 }}><strong>Tiêu chí đạt — đối chiếu khi viết:</strong><ul style={{ margin: '6px 0 0' }}>{e.rubric.map((r, j) => <li key={j}>{r}</li>)}</ul></div>}
+          {e.rubric
+            ? <div className="ex-grid">
+                <div className="ex-left"><div className="banner" style={{ marginTop: 8 }}><strong>Tiêu chí đạt — đối chiếu khi viết:</strong><ul style={{ margin: '6px 0 0' }}>{e.rubric.map((r, j) => <li key={j}>{r}</li>)}</ul></div></div>
+                <div className="ex-right">{body}</div>
+              </div>
+            : body}
           {e.answer && <details><summary><strong>Xem đáp án mẫu — làm trước rồi mới đối chiếu</strong></summary><p>{e.answer}</p></details>}
-          <TutorChat s={s} day={day} kind="exercise" index={i} />
+          <TutorChatButton day={day} kind="exercise" index={i} />
         </div>
         </React.Fragment>
       })}
@@ -317,7 +341,8 @@ function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, 
         setDone(day.id, true)
       }}>Đánh dấu đã xong ngày này ✓</button>{s.done[day.id] && <button className="btn ghost" onClick={() => setDone(day.id, false)}>Bỏ đánh dấu xong</button>}</div>
       <p className="mut">Chỉ đánh dấu xong khi đã có output ở tab Làm bài tập, không chỉ đọc xong.</p>
-      {day.isCheckpoint && <div style={{ marginTop: 16 }}><TutorChat s={s} day={day} kind="defend" /></div>}
+      {day.exercises.length > 0 && <div style={{ marginTop: 10 }}><p className="mut">Có key AI thì xin AI chấm theo rubric từng bài (tham khảo, không tự tick giúp):</p>{day.exercises.map((_, i) => <AIGraderBox key={i} day={day} index={i} s={s} />)}</div>}
+      {day.isCheckpoint && <div style={{ marginTop: 16 }}><TutorChatButton day={day} kind="defend" label="Bảo vệ thiết kế trước khi duyệt" /></div>}
     </div>}
     <div className="sticky-nav">
       {prev && <button className="btn ghost small" onClick={() => go('day', prev.id)}>← Ngày {prev.id}</button>}
@@ -375,8 +400,10 @@ function Flashcards({ day, s, patch }) {
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [queue.length])
+  // Hàng nút chế độ đặt ngoài các nhánh return để khi một chế độ hết thẻ vẫn đổi được chế độ khác.
+  const modeRow = <div className="row" style={{ marginBottom: 8 }}>{FC_MODES.map(m => <button key={m.id} className={mode === m.id ? 'btn small' : 'btn ghost small'} onClick={() => setMode(m.id)}>{m.label}</button>)}</div>
   if (cards.length === 0) {
-    return <div className="card" style={{ marginTop: 16 }}><p className="mut">Chế độ thẻ "{FC_MODES.find(m => m.id === mode)?.label}" chưa có thẻ cho ngày này (thẻ tình huống sinh từ ngưỡng quyết định / cấm dùng, hiện có ở các ngày 11–20). Thử chế độ khác.</p></div>
+    return <div className="card" style={{ marginTop: 16 }}>{modeRow}<p className="mut">Chế độ thẻ "{FC_MODES.find(m => m.id === mode)?.label}" chưa có thẻ cho ngày này (thẻ tình huống sinh từ ngưỡng quyết định / cấm dùng, hiện có ở các ngày 11–20). Thử chế độ khác.</p></div>
   }
   if (done || pos >= queue.length) {
     const unknownIdx = cards.map((_, i) => i).filter(i => s.srs?.[`${day.id}-${cards[i].idx}`]?.status === 'unknown')
@@ -400,7 +427,7 @@ function Flashcards({ day, s, patch }) {
     }, 300)
   }
   return <div style={{ marginTop: 16 }}>
-    <div className="row" style={{ marginBottom: 8 }}>{FC_MODES.map(m => <button key={m.id} className={mode === m.id ? 'btn small' : 'btn ghost small'} onClick={() => setMode(m.id)}>{m.label}</button>)}</div>
+    {modeRow}
     <p className="mut">{mode === 'term' && 'Mặt sau có thêm ngưỡng quyết định và cảnh báo "không dùng khi" (nơi có dữ liệu).'}</p>
     <p className="mut">Thẻ {pos + 1}/{queue.length} · Bấm vào thẻ để lật, hoặc dùng phím Space/Enter để lật, phím mũi tên để chuyển thẻ. Thẻ chưa thuộc sẽ quay lại cuối hàng đợi trong phiên này và hẹn ôn sau 1 ngày; thẻ đã thuộc hẹn ôn theo SM-2 (1 → 6 → giãn dần).</p>
     <div className="flash" tabIndex={0} role="button" aria-label={`Thẻ flashcard. Bấm Space hoặc Enter để lật.`} onClick={() => setFlip(!flip)} onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setFlip(!flip) } }}><div className={`flash-in ${flip ? 'flipped' : ''}`}>
@@ -413,6 +440,24 @@ function Flashcards({ day, s, patch }) {
     <p className="mut">{srs ? `Ôn lại vào: ${fmtDate(srs.due)} (${srs.status === 'unknown' ? 'chưa thuộc' : 'đã thuộc'}${srs.interval ? `, khoảng ${srs.interval} ngày` : ''}).` : 'Chưa đánh dấu thẻ này.'} Phím tắt: ← → chuyển thẻ, Space/Enter lật thẻ.</p>
   </div>
 }
+function MockInterviewView({ go, s }) {
+  const [sel, setSel] = useState(1)
+  const day = DAY_BY_ID[sel]
+  return <div>
+    <h2>Phỏng vấn thử</h2>
+    <p className="mut">AI đóng vai interviewer senior: mỗi lượt CHỈ một câu hỏi, xoáy vào tiêu chí của ngày bạn chọn và điểm yếu lộ ra trong câu trả lời. Sau khoảng 4 lượt, AI tổng kết tiêu chí nào bạn bảo vệ được. Mẹo: chọn ngày đã có điểm tự chấm ≥ 4 để luyện đúng định nghĩa điểm 5 — "giải thích và bảo vệ được cho người khác".</p>
+    <label>Chọn ngày để luyện bảo vệ</label>
+    <select value={sel} onChange={e => setSel(Number(e.target.value))}>
+      {ALL_DAYS.map(d => <option key={d.id} value={d.id}>Ngày {d.id} — {d.title}{s.scores[d.id] !== undefined ? ` (tự chấm ${s.scores[d.id]}/5)` : ''}</option>)}
+    </select>
+    {day && <div className="card" style={{ marginTop: 12 }}>
+      <div className="eyebrow">Tiêu chí bạn phải bảo vệ được</div>
+      <ul style={{ margin: '8px 0 0' }}>{(day.criteria || []).map((c, i) => <li key={i}>{c}</li>)}</ul>
+    </div>}
+    {day && <TutorChat s={s} day={day} kind="defend" />}
+  </div>
+}
+
 function Settings({ p }) {
   const { s, patch, exportJSON, importJSON, clearAll } = p
   const [msg, setMsg] = useState('')
@@ -423,6 +468,23 @@ function Settings({ p }) {
   const [models, setModels] = useState([])
   const [testing, setTesting] = useState(false)
   const [testMsg, setTestMsg] = useState('')
+  const exportAnki = () => {
+    const rows = [['Front', 'Back', 'Tags']]
+    ALL_DAYS.forEach(d => {
+      const explains = CONCEPT_EXPLAIN[d.id] || []
+      d.concepts.forEach((c, i) => {
+        const e = explains[i]
+        const back = c.d + (e?.thresholds ? '\n\n🚦 Ngưỡng: ' + e.thresholds : '') + (e?.dontUse ? '\n\n🚫 Không dùng khi: ' + e.dontUse : '')
+        rows.push([c.t, back, `BEApp::Ngay${d.id}`])
+        if (e?.what) rows.push([clipTxt(e.what, 260), `${c.t} — ${c.d}`, `BEApp::Ngay${d.id}::nguoc`])
+      })
+    })
+    const csv = '\uFEFF' + rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\r\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob); a.download = 'beapp-flashcards-anki.csv'; a.click()
+    URL.revokeObjectURL(a.href)
+  }
   return <div><h2>Cài đặt và cài app lên laptop</h2>
     <div className="card"><h3>1. Cài đặt PWA</h3><ol><li>Mở web này bằng Chrome hoặc Edge trên laptop.</li><li>Trên thanh địa chỉ, bấm biểu tượng Install / Cài đặt, hoặc menu ⋮ → Install app / Cài đặt ứng dụng.</li><li>Biểu tượng BEApp sẽ xuất hiện ngoài desktop, taskbar và Start Menu. Mở từ biểu tượng sẽ ra cửa sổ riêng, không có thanh địa chỉ.</li><li>App chạy offline cho nội dung 30 ngày và bài làm của bạn. Khi có bản mới, app sẽ hiện banner "Có bản mới" — bấm cập nhật, đừng để bản cũ kẹt lại.</li></ol><p className="mut">Lưu ý: nội dung và tiến độ lưu trên trình duyệt của máy bạn. Đổi máy thì dùng Xuất dữ liệu ở dưới rồi Nhập lại. Icon PWA đã có PNG 192 và 512 trong manifest; việc cài từ link deploy thật vẫn cần kiểm chứng sau khi có link Vercel.</p></div>
     <div className="card" style={{ marginTop: 14 }}><h3>2. Lịch học của bạn</h3>
@@ -431,7 +493,8 @@ function Settings({ p }) {
       <label>Giờ nhắc học hàng ngày</label><input type="time" value={s.reminder || '07:00'} onChange={e => patch({ reminder: e.target.value })} />
       <p className="mut">Quyền thông báo hiện tại: {perm}. App không gửi thông báo nền khi chưa mở app. Cách chắc chắn nhất: ghim BEApp lên taskbar và mở vào giờ đã chọn. Số phiên Pomodoro đã xong: {s.pomodoroDone || 0}{s.pomodoroInterrupted ? `, ${s.pomodoroInterrupted} phiên dở` : ''}.</p>
       <button className="btn ghost small" onClick={async () => { try { const r = await Notification.requestPermission(); setPerm(r); if (r === 'granted') new Notification('BEApp nhắc học', { body: 'Đây là thông báo thử. Đến giờ nhắc, hãy mở BEApp và học tiếp ngày đang dở.' }); setMsg(r === 'granted' ? 'Đã gửi thông báo thử.' : 'Quyền thông báo: ' + r + '. Nếu đã chặn, hãy mở lại quyền trong cài đặt trình duyệt cho trang này.') } catch { setMsg('Trình duyệt này không hỗ trợ thông báo.') } }}>Xin quyền và thử nhắc ngay</button>{msg && <p>{msg}</p>}</div>
-    <div className="card" style={{ marginTop: 14 }}><h3>3. Sao lưu tiến độ</h3><div className="row"><button className="btn small" onClick={exportJSON}>Xuất dữ liệu ra file JSON</button><label className="btn ghost small">Chọn file để nhập<input type="file" accept="application/json" hidden onChange={e => { if (e.target.files[0]) setPendingFile(e.target.files[0]); e.target.value = '' }} /></label><button className="btn ghost small" onClick={() => { if (window.confirm('Xóa toàn bộ tiến độ và ghi chú? Hành động này không hoàn tác được.')) clearAll() }}>Xóa toàn bộ dữ liệu</button></div>
+    <div className="card" style={{ marginTop: 14 }}><h3>3. Sao lưu tiến độ</h3><div className="row"><button className="btn small" onClick={exportJSON}>Xuất dữ liệu ra file JSON</button><button className="btn ghost small" onClick={exportAnki}>Xuất flashcards CSV (Anki)</button><label className="btn ghost small">Chọn file để nhập<input type="file" accept="application/json" hidden onChange={e => { if (e.target.files[0]) setPendingFile(e.target.files[0]); e.target.value = '' }} /></label><button className="btn ghost small" onClick={() => { if (window.confirm('Xóa toàn bộ tiến độ và ghi chú? Hành động này không hoàn tác được.')) clearAll() }}>Xóa toàn bộ dữ liệu</button></div>
+      <p className="mut">CSV có 2 loại thẻ: thuật ngữ (kèm ngưỡng/cấm dùng) và đoán ngược, tag theo ngày (BEApp::Ngay&lt;id&gt;) — import thẳng vào Anki hoặc Google Sheets.</p>
       {pendingFile && <div className="warn" style={{ marginTop: 12 }}><strong>Nhập file “{pendingFile.name}” sẽ thay thế toàn bộ tiến độ hiện tại.</strong> Bạn đã xuất backup chưa?<div className="row" style={{ marginTop: 8 }}><button className="btn small" onClick={exportJSON}>Xuất backup trước</button><button className="btn" onClick={() => importJSON(pendingFile, (ok, data) => { if (ok) { const days = data?.done ? Object.keys(data.done).length : 0; const notes = data?.notes ? Object.values(data.notes).filter(Boolean).length : 0; setImportSummary(`Đã nhập xong: ${days} ngày xong, ${notes} ghi chú.`); setPendingFile(null) } else setImportSummary('File không đọc được, tiến độ cũ vẫn giữ nguyên.') })}>Nhập và thay thế</button><button className="btn ghost small" onClick={() => setPendingFile(null)}>Hủy</button></div></div>}
       {importSummary && <p>{importSummary}</p>}</div>
     <div className="card" style={{ marginTop: 14 }}><h3>4. AI Gia sư (tùy chọn, key của bạn)</h3>
@@ -456,6 +519,27 @@ function Settings({ p }) {
       </div>
       {testMsg && <p className="mut">{testMsg}</p>}
       <p className="mut">Khi chưa có key: mọi phần vẫn chạy với gợi ý viết sẵn. Trong mỗi khung chat có nút "Sao chép bối cảnh" — dán sang bất kỳ AI nào bạn đang có mà không cần key trong app.</p></div>
+    <div className="card" style={{ marginTop: 14 }}><h3>5. Giao diện và phím tắt</h3>
+      <label>Chủ đề</label>
+      <select value={s.theme || 'dark'} onChange={e => patch({ theme: e.target.value })}>
+        <option value="dark">Tối (mặc định)</option>
+        <option value="light">Sáng</option>
+      </select>
+      <label>Cỡ chữ</label>
+      <select value={s.fontScale || 1} onChange={e => patch({ fontScale: Number(e.target.value) })}>
+        <option value={0.9}>Nhỏ (90%)</option>
+        <option value={1}>Vừa (100%)</option>
+        <option value={1.15}>Lớn (115%)</option>
+        <option value={1.3}>Rất lớn (130%)</option>
+      </select>
+      <p className="mut">Cả hai lưu trên máy bạn và áp dụng ngay toàn app — nội dung học dài thì tăng cỡ chữ đỡ mỏi mắt.</p>
+      <h3 style={{ marginTop: 14 }}>Phím tắt</h3>
+      <ul className="mut">
+        <li><strong>/</strong> — mở Tìm kiếm và focus ô nhập</li>
+        <li><strong>1–6</strong> — đổi tab trong ngày học (Học, Làm bài, Flashcard, Tự chấm, Giải thích, Lab)</li>
+        <li><strong>←/→</strong> — chuyển thẻ flashcard · <strong>Space/Enter</strong> — lật thẻ</li>
+        <li><strong>Esc</strong> — đóng khung chat gia sư · <strong>Enter</strong> — gửi câu hỏi trong chat</li>
+      </ul></div>
   </div>
 }
 export default function App() {
@@ -467,8 +551,37 @@ export default function App() {
   const [timelineWeek, setTimelineWeek] = useState(0)
   const [searchQ, setSearchQ] = useState('')
   const [update, setUpdate] = useState(false)
+  const [dockOpen, setDockOpen] = useState(false)
   const [pomo, setPomo] = useState({ sec: 25 * 60, duration: 25 * 60, run: false, started: false })
   const pomoRef = useRef(pomo); pomoRef.current = pomo
+  // Chủ đề + cỡ chữ áp dụng cấp body ngay khi đổi.
+  useEffect(() => {
+    document.body.classList.toggle('light', (s.theme || 'dark') === 'light')
+    document.body.classList.toggle('focus', !!s.focusMode)
+    document.body.style.zoom = s.fontScale && s.fontScale !== 1 ? String(s.fontScale) : ''
+  }, [s.theme, s.fontScale, s.focusMode])
+  // Phím tắt toàn app: / tìm kiếm, 1–6 đổi tab ngày, Esc đóng dock. Không ăn khi đang gõ.
+  useEffect(() => {
+    const h = (e) => {
+      const t = e.target
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
+      if (e.key === 'Escape') { setDockOpen(false); return }
+      if (e.key === '/') { e.preventDefault(); setView('search'); window.scrollTo(0, 0); setTimeout(() => document.getElementById('search-input')?.focus(), 60); return }
+      if (view === 'day' && /^[1-6]$/.test(e.key)) setDayTab(DAY_TABS[Number(e.key) - 1])
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [view])
+  // Focus mode: mở một ngày là tự chạy phiên Pomodoro 25 phút (1 lần mỗi lần vào ngày đó).
+  const autoPomoRef = useRef('')
+  useEffect(() => {
+    if (!s.focusMode || view !== 'day') return
+    const key = 'day-' + dayId
+    if (autoPomoRef.current === key) return
+    autoPomoRef.current = key
+    if (pomoRef.current.run || pomoRef.current.started) return
+    setPomo({ sec: 25 * 60, duration: 25 * 60, run: true, started: true })
+  }, [view, dayId, s.focusMode])
   useEffect(() => { const h = () => setUpdate(true); window.addEventListener('beapp-update', h); return () => window.removeEventListener('beapp-update', h) }, [])
   // Pomodoro sống ở cấp App: đổi tab không reset (P1-09).
   useEffect(() => {
@@ -484,6 +597,7 @@ export default function App() {
     if (prevSecRef.current > 0 && pomo.sec === 0 && pomo.run) {
       setPomo(prev => ({ ...prev, run: false, started: false }))
       patch({ pomodoroDone: (s.pomodoroDone || 0) + 1, pomodoroMinutes: (s.pomodoroMinutes || 0) + Math.round(pomo.duration / 60) })
+      if (s.focusMode && view === 'day') { setDayTab('do'); window.scrollTo(0, 0) }
     }
     prevSecRef.current = pomo.sec
   }, [pomo.sec, pomo.run])
@@ -508,7 +622,8 @@ export default function App() {
   const setPomoDur = (dur) => setPomo(prev => ({ ...prev, sec: dur, duration: dur, run: false, started: false }))
   return <div>
     <header className="topbar"><div className="topbar-in"><div className="logo">BE<span>App</span> <small style={{ fontSize: 13, color: '#93a0be' }}>· 30 ngày Backend Senior</small></div>
-      <nav className="nav"><button className={view === 'home' ? 'on' : ''} onClick={() => go('home')}>Trang chính</button><button className={view === 'timeline' ? 'on' : ''} onClick={() => go('timeline')}>Timeline</button><button className={view === 'review' ? 'on' : ''} onClick={() => go('review')}>Hôm nay ôn gì</button><button className={view === 'search' ? 'on' : ''} onClick={() => go('search')}>Tìm kiếm</button><button className={view === 'settings' ? 'on' : ''} onClick={() => go('settings')}>Cài đặt</button></nav>
+      <nav className="nav"><button className={view === 'home' ? 'on' : ''} onClick={() => go('home')}>Trang chính</button><button className={view === 'timeline' ? 'on' : ''} onClick={() => go('timeline')}>Timeline</button><button className={view === 'review' ? 'on' : ''} onClick={() => go('review')}>Hôm nay ôn gì</button><button className={view === 'mock' ? 'on' : ''} onClick={() => go('mock')}>Phỏng vấn</button><button className={view === 'search' ? 'on' : ''} onClick={() => go('search')}>Tìm kiếm</button><button className={view === 'settings' ? 'on' : ''} onClick={() => go('settings')}>Cài đặt</button></nav>
+      <button className={`focus-toggle ${s.focusMode ? 'on' : ''}`} title="Chế độ tập trung: ẩn điều hướng, tự chạy Pomodoro khi vào ngày học, hết phiên nhảy vào bài tập" onClick={() => patch({ focusMode: !s.focusMode })}>🎯 {s.focusMode ? 'Tắt tập trung' : 'Tập trung'}</button>
     </div></header>
     <main className="wrap view" key={view}>
       {(() => {
@@ -525,9 +640,11 @@ export default function App() {
         {view === 'timeline' && <Timeline go={go} s={s} week={timelineWeek} setWeek={setTimelineWeek} />}
         {view === 'review' && <ReviewView go={go} s={s} />}
         {view === 'day' && <DayView day={day} go={go} p={p} pomo={pomo} onTogglePomo={togglePomo} onResetPomo={resetPomo} onSetPomo={setPomoDur} tab={dayTab} setTab={setDayTab} />}
+        {view === 'mock' && <MockInterviewView go={go} s={s} />}
         {view === 'search' && <SearchView go={go} s={s} initialQ={searchQ} />}
         {view === 'settings' && <Settings p={p} />}
       </Boundary>
+      <ChatDock s={s} open={dockOpen} onToggle={() => setDockOpen(v => !v)} onClose={() => setDockOpen(false)} onOpen={() => setDockOpen(true)} />
       <footer>BEApp v1 · Nội dung từ lộ trình 30 ngày trong Google Doc "Theory domains for backend dev". Tiến độ lưu ở localStorage trên máy bạn, không gửi lên server. Mở bằng Chrome/Edge và Install app để dùng như app trên laptop.</footer>
     </main>
   </div>

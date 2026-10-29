@@ -2,7 +2,8 @@ import React, { useState, useRef } from 'react'
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url'
 import { LABS } from '../data/labs.js'
 import { chatCompletion, detectProvider } from '../llm.js'
-import { TutorChat } from './TutorChat.jsx'
+import { TutorChatButton } from './TutorChat.jsx'
+import { buildContextBundle } from '../tutorContext.js'
 
 // Lab thực hành: mỗi lab có code lỗi/skeleton, bằng chứng lỗi, đáp án, vì sao, gợi ý.
 // Engine KHÔNG tự chấm code bằng test ẩn (dữ liệu lab không mang assertion) —
@@ -71,7 +72,7 @@ function LabCard({ lab, mKey, day, s, patch }) {
       <button className="btn ghost small" onClick={() => mark(false)}>Chưa làm được, ôn lại sau</button>
       {done !== undefined && <span className="mut">{done ? 'Đã đánh dấu làm được.' : 'Đã đánh dấu chưa làm được — lab này sẽ được ưu tiên ôn lại.'}</span>}
     </div>
-    <TutorChat s={s} day={day} kind="lab" lab={lab} openedHints={hintIdx} />
+    <TutorChatButton day={day} kind="lab" lab={lab} openedHints={hintIdx} />
   </div>
 }
 
@@ -169,7 +170,7 @@ export function TeachBackBox({ cKey, c, e, s, patch }) {
   // AI đối chiếu (không chấm điểm, không tick giúp): so bản teach-back với nội dung gốc.
   const askAI = async () => {
     const cfg = s.llm || {}
-    if (!(cfg.key || detectProvider(cfg) === 'custom')) { setErr('Chưa có API key. Vào Cài đặt → AI Gia sư để nhập key, hoặc bỏ qua — bản này để bạn tự so lại cũng được.'); return }
+    if (!(cfg.key || (detectProvider(cfg) === 'custom' && (cfg.endpoint || '').trim()))) { setErr('Chưa có API key. Vào Cài đặt → AI Gia sư để nhập key, hoặc bỏ qua — bản này để bạn tự so lại cũng được.'); return }
     setBusy(true); setErr(''); setReview('')
     try {
       const out = await chatCompletion(cfg, [
@@ -186,6 +187,7 @@ export function TeachBackBox({ cKey, c, e, s, patch }) {
     <textarea value={text} onChange={e => setText(e.target.value)} placeholder="VD: N+1 là khi… vì… nên sửa bằng…" style={{ width: '100%', minHeight: 90 }} />
     <div className="row"><button className="btn small" onClick={save}>Lưu bản giải thích</button>
       {e && <button className="btn ghost small" disabled={busy || !text.trim()} onClick={askAI}>{busy ? 'AI đang đối chiếu…' : '🤖 Xin AI đối chiếu với nội dung gốc'}</button>}
+      {saved?.text && <button className="btn ghost small" onClick={() => patch({ teachBack: { ...s.teachBack, [cKey]: { ...saved, reReadAt: new Date().toISOString() } } })}>Đã đọc lại bản này ✓{saved.reReadAt ? ` (lần trước ${new Date(saved.reReadAt).toLocaleDateString('vi-VN')})` : ''}</button>}
       {saved && <span className="mut">Đã lưu{saved.at ? ` lúc ${new Date(saved.at).toLocaleString('vi-VN')}` : ''}.</span>}
     </div>
     {err && <p className="warn">{err}</p>}
@@ -197,7 +199,7 @@ export function LabView({ day, s, patch }) {
   const labs = LABS[day.id] || []
   return <div style={{ marginTop: 16 }}>
     <div className="card"><h3>Lab thực hành — Ngày {day.id}: {day.title}</h3>
-      <p className="mut">5 lab gắn với phần cần thiết nhất của ngày này: sửa code lỗi thật, điền khung code, đoán trước khi mở đáp án, ra quyết định, và chạy lệnh trong terminal mô phỏng. Lab SQL có nút chạy thật bằng SQLite trong trình duyệt. Làm được thì bấm "Tôi làm được" — app ghi vào tiến độ thông thạo của bạn.</p>
+      <p className="mut">5 lab gắn với phần cần thiết nhất của ngày này: sửa code lỗi thật, điền khung code, đoán trước khi mở đáp án, ra quyết định, và chạy lệnh trong terminal mô phỏng.</p>
       <p className="mut">{labs.length}/5 lab{labs.length !== 5 ? ' — cảnh báo: dữ liệu lab chưa đủ 5 cho ngày này.' : ''} Mỗi lab có gia sư AI bám bài (bật ở Cài đặt → AI Gia sư). Lab SQL có nút chạy thật bằng SQLite trong trình duyệt. Làm được thì bấm "Tôi làm được" — app ghi vào tiến độ thông thạo của bạn.</p>
     </div>
     {labs.map(lab => {
@@ -206,5 +208,37 @@ export function LabView({ day, s, patch }) {
       return <LabCard key={lab.id} lab={lab} mKey={mKey} day={day} s={s} patch={patch} />
     })}
     {labs.length === 0 && <p className="mut">Ngày này chưa có lab.</p>}
+  </div>
+}
+
+// AI chấm bài theo rubric, ở tab Tự chấm. Tham khảo — không tự tick tiêu chí,
+// không tự nâng điểm: kết quả để người học đối chiếu rồi tự quyết định điểm của mình.
+export function AIGraderBox({ day, index, s }) {
+  const [out, setOut] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const note = s.notes?.[`${day.id}-${index}`] || ''
+  const hasCredential = !!(s.llm?.key || (detectProvider(s.llm) === 'custom' && ((s.llm?.endpoint) || '').trim()))
+  const run = async () => {
+    const cfg = s.llm || {}
+    if (!hasCredential) { setErr('Chưa có API key. Vào Cài đặt → AI Gia sư để nhập key.'); return }
+    setBusy(true); setErr(''); setOut('')
+    try {
+      const bundle = buildContextBundle(day, 'exercise', { index }, s)
+      const acc = await chatCompletion(cfg, [
+        { role: 'system', content: bundle.reviewSystem },
+        { role: 'user', content: 'Hãy chấm bài làm của tôi theo từng tiêu chí đạt như hướng dẫn.' },
+      ], { maxTokens: 700 })
+      setOut(acc || '(Không có nội dung trả về)')
+    } catch (e) { setErr(String(e.message || e)) }
+    setBusy(false)
+  }
+  if (!note.trim()) return null
+  return <div className="card" style={{ marginTop: 10, borderColor: '#8b7cff' }}>
+    <strong>🤖 AI chấm "Bài {index + 1}" theo rubric</strong>
+    <p className="mut">Kết quả là tham khảo: AI không tự tick tiêu chí, không tự nâng điểm — đọc, đối chiếu rồi bạn tự chấm.</p>
+    <div className="row"><button className="btn ghost small" disabled={busy} onClick={run}>{busy ? 'AI đang chấm…' : 'Chấm bài này'}</button></div>
+    {err && <p className="warn">{err}</p>}
+    {out && <p style={{ whiteSpace: 'pre-wrap' }}>{out}</p>}
   </div>
 }

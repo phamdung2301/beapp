@@ -119,3 +119,58 @@ mark{background:var(--acc);color:#07090f;border-radius:3px;padding:0 2px}
 .typing{color:var(--mut);font-style:italic}
 .ai-review{margin-top:10px;background:#fff;border:1px solid #ddd6c6;border-radius:12px;padding:12px;white-space:pre-wrap}
 @media print{.chatbox,.chat-quick{display:none!important}}
+
+/* Chat dock nổi: panel bên phải, hội thoại sống xuyên suốt khi đổi bài; mobile = bottom-sheet */
+.dock{position:fixed;top:64px;right:12px;bottom:12px;width:400px;max-width:calc(100vw - 24px);background:var(--panel);border:1px solid var(--line);border-radius:16px;z-index:40;display:none;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.dock.open{display:flex}
+.dock-head{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
+.dock-tabs{display:flex;gap:6px;flex-wrap:wrap;padding:10px 12px 0;overflow-y:auto;max-height:76px}
+.dock-tabs .chip.on{border-color:var(--acc);color:var(--acc)}
+.dock-body{flex:1;overflow-y:auto;padding:12px}
+.dock-body .chatbox{margin-top:0}
+.dock-empty{padding:8px 2px}
+.dock-launch{position:fixed;right:14px;bottom:14px;z-index:39;width:48px;height:48px;border-radius:50%;background:var(--acc);color:#07090f;border:0;font-size:20px;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.dock-launch.on{background:var(--vio);color:#fff}
+@media(max-width:700px){
+  .dock{top:auto;left:0;right:0;bottom:0;width:100%;max-width:none;height:72vh;border-radius:18px 18px 0 0}
+  .dock-launch{bottom:70px}
+}
+
+/* Heatmap 30 ngày + thanh phân bố mastery */
+.heatmap{display:grid;grid-template-columns:repeat(10,1fr);gap:6px}
+.hm{aspect-ratio:1;border-radius:8px;border:1px solid var(--line);background:#141c30;color:var(--mut);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0}
+.hm.done{border-color:var(--acc);color:var(--ink)}
+.hm.progress{border-color:#e5a13d}
+.mastery-bar{display:flex;height:14px;border-radius:999px;overflow:hidden;margin-top:10px;background:#141c30}
+.mastery-bar i{display:block;height:100%}
+
+/* Split view: rubric bên trái, textarea bên phải (màn hình rộng) */
+.ex-grid{display:grid;grid-template-columns:1fr 1.4fr;gap:14px;margin-top:8px;align-items:start}
+.ex-left{position:sticky;top:70px}
+@media(max-width:900px){.ex-grid{grid-template-columns:1fr}.ex-left{position:static}}
+
+/* Nút chế độ tập trung ở topbar */
+.focus-toggle{background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:7px 13px;white-space:nowrap}
+.focus-toggle.on{background:var(--vio);border-color:var(--vio);color:#fff;font-weight:700}
+body.focus .nav{display:none}
+body.focus .marquee{display:none}
+body.focus .hero{display:none}
+
+/* Chủ đề sáng: đè biến màu + những chỗ cố định màu tối */
+body.light{--bg:#f2f4f9;--panel:#ffffff;--panel2:#f6f8fc;--line:#d9dfeb;--ink:#1a1d26;--mut:#5a6272;--acc:#557c00;--vio:#5a48e0;--red:#b03a2e}
+body.light .btn{color:#fff}
+body.light .btn.ghost{color:var(--ink);border-color:var(--line)}
+body.light textarea,body.light input,body.light select{background:#fff;color:var(--ink);border-color:var(--line)}
+body.light .code{background:#fff;color:var(--ink)}
+body.light .topbar{background:rgba(242,244,249,.9)}
+body.light .tag,body.light .chip{background:#eef1f7;color:var(--ink)}
+body.light .banner{background:#f3f7e3;border-color:#9ab53a;color:var(--ink)}
+body.light .warn{background:#fdecea;border-color:#e5a9a4;color:var(--ink)}
+body.light .bubble.ai{background:#f6f8fc}
+body.light .bubble.user{background:#e4ebff;border-color:#c3d0f5;color:var(--ink)}
+body.light .sticky-nav{background:#ffffff}
+body.light .aurora i{opacity:.14}
+body.light .progress,body.light .mastery-bar{background:#e3e8f2}
+body.light .hm{background:#e8ecf5;color:#5a6272}
+body.light .flash-face{background:var(--panel)}
+body.light .paper{border:1px solid #ddd6c6}
