@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useRef } from 'react'
 import { DAYS, WEEKS, REVIEW_CHECKLIST, CAPSTONE_RUBRIC } from './data/days.js'
 import { DAY_EXTRA } from './data/dayExtra.js'
 import { useProgress, useReveal, streakOf, addDays, todayStr } from './store.js'
+import { LogSimulator, SpecCalculator, MisconceptionCorner } from './components/Day1Interactive.jsx'
 
 export function enrichDay(day) {
   const ex = DAY_EXTRA[day.id]
@@ -157,14 +158,19 @@ function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, 
       </details>)}
       {day.links && day.links.length > 0 && <div style={{ marginTop: 14 }}><strong>Liên kết chéo:</strong>{day.links.map(l => <span key={l.to}> <button className="btn ghost small" onClick={() => go('day', l.to)}>{l.label}</button></span>)}</div>}
       <div className="warn" style={{ marginTop: 16 }}><strong>Bẫy agent thường gặp:</strong> {day.trap}</div>
+      {day.id === 1 && <div style={{ marginTop: 16 }}><MisconceptionCorner /></div>}
       <div style={{ marginTop: 16 }}><PomodoroCard pomo={pomo} onToggle={onTogglePomo} onReset={onResetPomo} onSet={onSetPomo} /></div>
     </div>}
     {tab === 'do' && <div style={{ marginTop: 16 }}>
+      {day.id === 1 && <p className="mut">Lưu ý cho Bài 1: thứ tự liệt kê trong đề (thread → connection → cache) chỉ là danh sách, không phải thứ tự kiểm chứng. Thứ tự kiểm chứng luôn theo bằng chứng mạnh nhất trong log bạn đang cầm — hãy làm Log Simulator dưới đây trước khi viết ghi chú.</p>}
       {day.exercises.map((e, i) => {
         const key = `${day.id}-${i}`
         const note = s.notes[key] || ''
         const words = note.trim() ? note.trim().split(/\s+/).length : 0
-        return <div className="card" key={i} style={{ marginBottom: 14 }}><h3>Bài {i + 1}: {e.t}</h3><p className="mut">{e.d}</p>
+        return <React.Fragment key={i}>
+          {day.id === 1 && i === 0 && <LogSimulator />}
+          {day.id === 1 && i === 1 && <SpecCalculator onInsert={(text) => { appendNote(`${day.id}-1`, text); showToast('Đã chèn spec đã tính vào cuối ghi chú Bài 2.') }} />}
+          <div className="card" style={{ marginBottom: 14 }}><h3>Bài {i + 1}: {e.t}</h3><p className="mut">{e.d}</p>
           {e.material && <details open><summary><strong>Gói vật liệu để làm bài (không cần app thật)</strong></summary><pre className="code">{e.material}</pre></details>}
           <div className="row"><button className="btn ghost small" onClick={() => copyTemplate(e.template)}>Sao chép template</button><button className="btn ghost small" onClick={() => { appendNote(key, e.template); showToast('Đã chèn template vào cuối ghi chú. Bấm Hoàn tác nếu muốn trở lại bản trước.') }}>Chèn template vào cuối ghi chú</button>
             {s.noteUndo?.[key] !== undefined && <button className="btn ghost small" onClick={() => { undoNote(key); showToast('Đã hoàn tác lần chèn vừa rồi.') }}>Hoàn tác lần chèn vừa rồi</button>}</div>
@@ -174,6 +180,7 @@ function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, 
           {preview[key] && <div className="paper" style={{ padding: 14 }} dangerouslySetInnerHTML={{ __html: mdPreview(note || '(Chưa có ghi chú)') }} />}
           {e.answer && <details><summary><strong>Xem đáp án mẫu — làm trước rồi mới đối chiếu</strong></summary><p>{e.answer}</p>{e.rubric && <><strong>Bài làm đạt khi có đủ:</strong><ul>{e.rubric.map((r, j) => <li key={j}>{r}</li>)}</ul></>}</details>}
         </div>
+        </React.Fragment>
       })}
       {day.id === 28 && <div className="card"><h3>Checklist review code agent (tick từng mục khi đã kiểm tra)</h3>{REVIEW_CHECKLIST.map((c, i) => <label key={i} style={{ fontWeight: 400 }}><input type="checkbox" checked={!!s.review?.[day.id]?.[i]} onChange={() => toggleList('review', day.id, i)} /> {c}</label>)}</div>}
       {day.id === 30 && <div className="card"><h3>Rubric capstone (mỗi phần 0–2 điểm)</h3>{CAPSTONE_RUBRIC.map((c, i) => <div key={i}><label>{c.t} — {c.d}</label><select value={s.capstone?.[i] ?? ''} onChange={ev => patch({ capstone: { ...s.capstone, [i]: Number(ev.target.value) } })}><option value="">Chưa chấm</option><option value="0">0</option><option value="1">1</option><option value="2">2</option></select></div>)}<p><strong>Tổng: {Object.values(s.capstone || {}).reduce((a, b) => a + (Number(b) || 0), 0)}/10.</strong> Dưới 7 thì quay lại ngày yếu nhất và làm lại checkpoint tuần đó.</p></div>}
