@@ -38,10 +38,20 @@ npm run build
 ## AI Gia sư (tùy chọn)
 
 App chạy đầy đủ mà không cần key AI. Muốn bật gia sư: Cài đặt → AI Gia sư → dán key
-của bạn (chỉ lưu trên máy bạn): key `AQ.`/`AIza` của Google Gemini hoặc `gsk_` của Groq,
-hoặc chọn endpoint OpenAI-compatible khác. Bấm "Kiểm tra key & tải danh sách model" để
-xem model nào key của bạn chạy được. Chưa có key vẫn dùng được "Sao chép bối cảnh" để
-hỏi ở AI ngoài.
+của bạn (chỉ lưu ở localStorage máy bạn, app là web tĩnh nên không có .env — giá trị
+.env sẽ bị nhúng vào bundle và lộ ra công khai).
+
+- **Nhiều key, xoay vòng**: mỗi nhà cung cấp dán được nhiều key, mỗi dòng một key
+  (VD: 2 key Gemini, 2 key Groq). Khi một key hết quota (429) hoặc bị từ chối
+  (401/403), app tự chuyển sang key kế tiếp và ghi nhớ vị trí xoay.
+- **Fallback chéo nhà cung cấp**: để provider "Tự chọn" thì Gemini được dùng trước,
+  hết sạch key Gemini sẽ đổ sang key Groq và ngược lại. Chọn "Chỉ Gemini"/"Chỉ Groq"
+  nếu muốn giữ đúng một nhà cung cấp.
+- Key `AQ.` (Google Cloud) hoặc `AIza` (AI Studio) → Gemini; `gsk_` → Groq; hoặc
+  endpoint OpenAI-compatible khác.
+- Bấm "Kiểm tra từng key & tải model" để xem key nào sống, key nào hết quota, và
+  model nào key của bạn chạy được. Chưa có key vẫn dùng được "Sao chép bối cảnh"
+  để hỏi ở AI ngoài.
 
 ## Deploy
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { chatCompletion, detectProvider } from '../llm.js'
+import { chatCompletion, hasConfig } from '../llm.js'
 import { buildContextBundle, MODE_LABEL } from '../tutorContext.js'
 import { DAY_BY_ID } from '../dayIndex.js'
 import { LABS } from '../data/labs.js'
@@ -91,13 +91,13 @@ export function TutorChat({ s, day, kind, index, lab, openedHints = 0 }) {
 
   // custom (endpoint riêng) thì bắt buộc có endpoint mới tính là cấu hình xong —
   // key trống + endpoint trống là chưa cấu hình, phải hướng dẫn người học vào Cài đặt.
-  const hasCredential = !!cfg.key || (detectProvider(cfg) === 'custom' && !!(cfg.endpoint || '').trim())
+  const hasCredential = hasConfig(cfg)
 
   const send = async (text, opts = {}) => {
     const q = (typeof text === 'string' ? text : input).trim()
     if (!q || busy) return
     if (!hasCredential) {
-      setErr('Chưa có API key. Vào Cài đặt → AI Gia sư để nhập key (AQ./AIza của Google hoặc gsk_ của Groq). Hoặc bấm "Sao chép bối cảnh" để hỏi ở AI khác bạn đang có.')
+      setErr('Chưa có API key. Vào Cài đặt → AI Gia sư để dán key (AQ./AIza của Google hoặc gsk_ của Groq — dán nhiều dòng, mỗi dòng 1 key, để tự xoay vòng khi hết quota). Hoặc bấm "Sao chép bối cảnh" để hỏi ở AI khác bạn đang có.')
       return
     }
     const next = [...msgs, { role: 'user', content: q, at: Date.now() }]

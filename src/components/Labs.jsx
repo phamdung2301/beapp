@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react'
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url'
 import { LABS } from '../data/labs.js'
-import { chatCompletion, detectProvider } from '../llm.js'
+import { chatCompletion, hasConfig } from '../llm.js'
 import { TutorChatButton } from './TutorChat.jsx'
 import { buildContextBundle } from '../tutorContext.js'
 
@@ -170,7 +170,7 @@ export function TeachBackBox({ cKey, c, e, s, patch }) {
   // AI đối chiếu (không chấm điểm, không tick giúp): so bản teach-back với nội dung gốc.
   const askAI = async () => {
     const cfg = s.llm || {}
-    if (!(cfg.key || (detectProvider(cfg) === 'custom' && (cfg.endpoint || '').trim()))) { setErr('Chưa có API key. Vào Cài đặt → AI Gia sư để nhập key, hoặc bỏ qua — bản này để bạn tự so lại cũng được.'); return }
+    if (!hasConfig(cfg)) { setErr('Chưa có API key. Vào Cài đặt → AI Gia sư để nhập key, hoặc bỏ qua — bản này để bạn tự so lại cũng được.'); return }
     setBusy(true); setErr(''); setReview('')
     try {
       const out = await chatCompletion(cfg, [
@@ -218,7 +218,7 @@ export function AIGraderBox({ day, index, s }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const note = s.notes?.[`${day.id}-${index}`] || ''
-  const hasCredential = !!(s.llm?.key || (detectProvider(s.llm) === 'custom' && ((s.llm?.endpoint) || '').trim()))
+  const hasCredential = hasConfig(s.llm)
   const run = async () => {
     const cfg = s.llm || {}
     if (!hasCredential) { setErr('Chưa có API key. Vào Cài đặt → AI Gia sư để nhập key.'); return }

@@ -4,7 +4,7 @@ import { CONCEPT_EXPLAIN } from './data/conceptExplain.js'
 import { QUIZ_EXTRA } from './data/quizExtra.js'
 import { LABS } from './data/labs.js'
 import { DRILLS } from './data/drills.js'
-import { PROVIDERS, detectProvider, defaultModelFor, listModels } from './llm.js'
+import { PROVIDERS, detectProvider, keysFor, maskKey, activeKeyIndex, checkKeys, listModels } from './llm.js'
 import { useProgress, useReveal, streakOf, addDays, todayStr, sm2Next, masteryLevel } from './store.js'
 import { LogSimulator, SpecCalculator, MisconceptionCorner } from './components/Day1Interactive.jsx'
 import { LabView, QuizBox, TeachBackBox, AIGraderBox } from './components/Labs.jsx'
@@ -465,9 +465,36 @@ function Settings({ p }) {
   const [pendingFile, setPendingFile] = useState(null)
   const [importSummary, setImportSummary] = useState('')
   const prov = detectProvider(s.llm)
-  const [models, setModels] = useState([])
+  const [keyDraft, setKeyDraft] = useState({ gemini: (s.llm?.keys?.gemini || []).join('\n'), groq: (s.llm?.keys?.groq || []).join('\n') })
+  const geminiKeys = keysFor('gemini', s.llm)
+  const groqKeys = keysFor('groq', s.llm)
+  const activeIdx = { gemini: activeKeyIndex('gemini'), groq: activeKeyIndex('groq') }
+  const [models, setModels] = useState({ gemini: [], groq: [] })
   const [testing, setTesting] = useState(false)
   const [testMsg, setTestMsg] = useState('')
+  const [checkRes, setCheckRes] = useState(null)
+  const setKeysDraft = (p, t) => {
+    setKeyDraft(d => ({ ...d, [p]: t }))
+    patch({ llm: { ...s.llm, keys: { ...(s.llm?.keys || {}), [p]: t.split('\n').map(x => x.trim()).filter(Boolean) } } })
+  }
+  const runKeyCheck = async () => {
+    setTesting(true); setTestMsg(''); setCheckRes(null)
+    const res = {}
+    const nextModels = { gemini: [], groq: [] }
+    try {
+      for (const p of ['gemini', 'groq']) {
+        if (!keysFor(p, s.llm).length) continue
+        res[p] = await checkKeys(s.llm || {}, p)
+        if (res[p].some(r => r.ok)) {
+          try { nextModels[p] = await listModels(s.llm || {}, p) } catch { /* datalist là best-effort */ }
+        }
+      }
+      setCheckRes(res)
+      setModels(nextModels)
+      if (!Object.keys(res).length) setTestMsg('Chưa có key nào để kiểm tra — dán ít nhất 1 key Gemini hoặc Groq ở trên.')
+    } catch (e) { setTestMsg('Lỗi: ' + (e.message || e)) }
+    setTesting(false)
+  }
   const exportAnki = () => {
     const rows = [['Front', 'Back', 'Tags']]
     ALL_DAYS.forEach(d => {
@@ -498,26 +525,37 @@ function Settings({ p }) {
       {pendingFile && <div className="warn" style={{ marginTop: 12 }}><strong>Nhập file “{pendingFile.name}” sẽ thay thế toàn bộ tiến độ hiện tại.</strong> Bạn đã xuất backup chưa?<div className="row" style={{ marginTop: 8 }}><button className="btn small" onClick={exportJSON}>Xuất backup trước</button><button className="btn" onClick={() => importJSON(pendingFile, (ok, data) => { if (ok) { const days = data?.done ? Object.keys(data.done).length : 0; const notes = data?.notes ? Object.values(data.notes).filter(Boolean).length : 0; setImportSummary(`Đã nhập xong: ${days} ngày xong, ${notes} ghi chú.`); setPendingFile(null) } else setImportSummary('File không đọc được, tiến độ cũ vẫn giữ nguyên.') })}>Nhập và thay thế</button><button className="btn ghost small" onClick={() => setPendingFile(null)}>Hủy</button></div></div>}
       {importSummary && <p>{importSummary}</p>}</div>
     <div className="card" style={{ marginTop: 14 }}><h3>4. AI Gia sư (tùy chọn, key của bạn)</h3>
-      <p className="mut">Key chỉ lưu ở localStorage trên máy bạn, app không gửi đi đâu ngoài endpoint của nhà cung cấp bạn chọn. App tự nhận diện theo định dạng key: <strong>AQ.</strong> (Google Cloud API key mới) hoặc <strong>AIza</strong> (AI Studio cũ) → Google Gemini; <strong>gsk_</strong> → Groq; key khác → dùng endpoint bạn nhập.</p>
-      <label>Provider</label>
+      <p className="mut">App là web tĩnh chạy trong trình duyệt nên <strong>không có .env</strong> — giá trị .env sẽ bị nhúng vào bundle tĩnh và lộ ra công khai. Key dán vào đây chỉ lưu ở localStorage máy bạn, request đi thẳng tới nhà cung cấp. <strong>Mỗi nhà cung cấp dán được nhiều key, mỗi dòng một key</strong> — app tự xoay vòng khi một key hết quota (429) hoặc bị từ chối, ghi nhớ vị trí để không đốt request vào key đang chết.</p>
+      <label>Provider ưu tiên</label>
       <select value={s.llm?.provider || 'auto'} onChange={e => patch({ llm: { ...s.llm, provider: e.target.value } })}>
-        <option value="auto">Tự nhận diện theo key</option>
-        <option value="gemini">Google Gemini (key AQ. / AIza)</option>
-        <option value="groq">Groq (key gsk_)</option>
-        <option value="custom">Endpoint khác (OpenAI-compatible)</option>
+        <option value="auto">Tự chọn — Gemini trước, hết sạch quota thì đổ sang Groq</option>
+        <option value="gemini">Chỉ Google Gemini</option>
+        <option value="groq">Chỉ Groq</option>
+        <option value="custom">Chỉ endpoint khác (OpenAI-compatible)</option>
       </select>
-      {prov === 'custom' && <><label>Endpoint (dạng …/v1/chat/completions)</label><input style={{ width: '100%', padding: 12 }} value={s.llm?.endpoint || ''} onChange={e => patch({ llm: { ...s.llm, endpoint: e.target.value } })} placeholder="https://…/v1/chat/completions" /></>}
-      <label>API key</label>
-      <input type="password" style={{ width: '100%', padding: 12 }} value={s.llm?.key || ''} onChange={e => patch({ llm: { ...s.llm, key: e.target.value } })} placeholder="Dán key: AQ.… / AIza… / gsk_…" />
-      <p className="mut">Nhận diện hiện tại: <strong>{PROVIDERS[prov]?.label}</strong> · model mặc định: <strong>{defaultModelFor(prov, s.llm) || '(chưa có — chọn hoặc nhập)'}</strong>. Lấy key Gemini: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">AI Studio</a> · key Groq: <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer">Groq Console</a>.</p>
-      <label>Model (để trống dùng mặc định)</label>
-      <input style={{ width: '100%', padding: 12 }} list="llm-models" value={s.llm?.model || ''} onChange={e => patch({ llm: { ...s.llm, model: e.target.value } })} placeholder={defaultModelFor(prov, s.llm) || 'model-name'} />
-      <datalist id="llm-models">{models.map(m => <option key={m} value={m} />)}</datalist>
+      <label>Key Google Gemini — mỗi dòng 1 key ({PROVIDERS.gemini.keyHint})</label>
+      <textarea rows={3} style={{ minHeight: 0, fontFamily: 'monospace', fontSize: 13 }} value={keyDraft.gemini} onChange={e => setKeysDraft('gemini', e.target.value)} placeholder={'AQ.Ab8R…\nAIzaSy…  (dòng thứ 2 là key dự phòng)'} />
+      <p className="mut">{geminiKeys.length ? `Đã lưu ${geminiKeys.length} key Gemini · lần tới dùng key #${((activeIdx.gemini ?? 0) % geminiKeys.length) + 1} (${maskKey(geminiKeys[(activeIdx.gemini ?? 0) % geminiKeys.length])}).` : 'Chưa có key Gemini.'}</p>
+      <label>Key Groq — mỗi dòng 1 key ({PROVIDERS.groq.keyHint})</label>
+      <textarea rows={3} style={{ minHeight: 0, fontFamily: 'monospace', fontSize: 13 }} value={keyDraft.groq} onChange={e => setKeysDraft('groq', e.target.value)} placeholder={'gsk_…\ngsk_…  (dòng thứ 2 là key dự phòng)'} />
+      <p className="mut">{groqKeys.length ? `Đã lưu ${groqKeys.length} key Groq · lần tới dùng key #${((activeIdx.groq ?? 0) % groqKeys.length) + 1} (${maskKey(groqKeys[(activeIdx.groq ?? 0) % groqKeys.length])}).` : 'Chưa có key Groq.'}</p>
+      {prov === 'custom' && <><label>Endpoint (dạng …/v1/chat/completions)</label><input style={{ width: '100%', padding: 12 }} value={s.llm?.endpoint || ''} onChange={e => patch({ llm: { ...s.llm, endpoint: e.target.value } })} placeholder="https://…/v1/chat/completions" />
+        <label>Model của endpoint custom</label><input style={{ width: '100%', padding: 12 }} value={s.llm?.models?.custom || s.llm?.model || ''} onChange={e => patch({ llm: { ...s.llm, models: { ...(s.llm?.models || {}), custom: e.target.value } } })} placeholder="model-name" /></>}
+      <label>Model Gemini (để trống dùng mặc định {PROVIDERS.gemini.defaultModel})</label>
+      <input style={{ width: '100%', padding: 12 }} list="llm-models-gemini" value={s.llm?.models?.gemini || ''} onChange={e => patch({ llm: { ...s.llm, models: { ...(s.llm?.models || {}), gemini: e.target.value } } })} placeholder={PROVIDERS.gemini.defaultModel} />
+      <datalist id="llm-models-gemini">{models.gemini.map(m => <option key={m} value={m} />)}</datalist>
+      <label>Model Groq (để trống dùng mặc định {PROVIDERS.groq.defaultModel})</label>
+      <input style={{ width: '100%', padding: 12 }} list="llm-models-groq" value={s.llm?.models?.groq || ''} onChange={e => patch({ llm: { ...s.llm, models: { ...(s.llm?.models || {}), groq: e.target.value } } })} placeholder={PROVIDERS.groq.defaultModel} />
+      <datalist id="llm-models-groq">{models.groq.map(m => <option key={m} value={m} />)}</datalist>
       <div className="row">
-        <button className="btn ghost small" disabled={testing} onClick={async () => { setTesting(true); setTestMsg(''); try { const list = await listModels(s.llm || {}); setModels(list); setTestMsg(`Kết nối OK — ${list.length} model chat khả dụng cho key này. Gợi ý: ${list.slice(0, 4).join(', ')}. Chọn trong ô Model hoặc để trống dùng mặc định.`) } catch (e) { setTestMsg('Lỗi: ' + (e.message || e)) } setTesting(false) }}>{testing ? 'Đang kiểm tra…' : 'Kiểm tra key & tải danh sách model'}</button>
-        <button className="btn ghost small" onClick={() => patch({ llm: { provider: s.llm?.provider || 'auto', endpoint: s.llm?.endpoint || '', model: '', key: '' } })}>Xóa key</button>
+        <button className="btn ghost small" disabled={testing} onClick={runKeyCheck}>{testing ? 'Đang kiểm tra từng key…' : 'Kiểm tra từng key & tải model'}</button>
+        <button className="btn ghost small" onClick={() => { setKeyDraft({ gemini: '', groq: '' }); patch({ llm: { provider: s.llm?.provider || 'auto', endpoint: s.llm?.endpoint || '', key: '', keys: { gemini: [], groq: [] }, models: s.llm?.models || {} } }) }}>Xóa toàn bộ key</button>
       </div>
-      {testMsg && <p className="mut">{testMsg}</p>}
+      {checkRes && <div style={{ marginTop: 8 }}>
+        {Object.entries(checkRes).map(([p, list]) => <div key={p}><strong>{PROVIDERS[p]?.label}:</strong>{list.length === 0 && <span className="mut"> chưa có key.</span>}{list.map((r, i) => <p key={i} className="mut" style={{ margin: '4px 0' }}>{r.ok ? '✓' : '✗'} {r.key} — {r.detail}</p>)}</div>)}
+      </div>}
+      {!checkRes && testMsg && <p className="mut">{testMsg}</p>}
+      <p className="mut">Lấy key Gemini: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">AI Studio</a> · key Groq: <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer">Groq Console</a>. Nhà cung cấp đang dùng: <strong>{PROVIDERS[prov]?.label}</strong>.</p>
       <p className="mut">Khi chưa có key: mọi phần vẫn chạy với gợi ý viết sẵn. Trong mỗi khung chat có nút "Sao chép bối cảnh" — dán sang bất kỳ AI nào bạn đang có mà không cần key trong app.</p></div>
     <div className="card" style={{ marginTop: 14 }}><h3>5. Giao diện và phím tắt</h3>
       <label>Chủ đề</label>
