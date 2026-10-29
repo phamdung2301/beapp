@@ -47,6 +47,17 @@ button{cursor:pointer}
 .paper{background:#f4f1e8;color:#1a1d26;border-radius:18px;padding:22px}
 .paper h2,.paper h3{color:#111}
 .paper .mut{color:#5a6272}
+/* FIX chữ mờ ở mục Học: khối giấy sáng nhưng các khối con trước đây vẫn
+   giữ nền tối (details, warn, card) trong khi chữ kế thừa màu tối từ .paper,
+   thành chữ tối trên nền tối. Ép toàn bộ khối con trong .paper sang nền sáng. */
+.paper details{background:#ffffff;border-color:#ddd6c6;color:#1a1d26}
+.paper details summary{color:#111}
+.paper .warn{background:#fdecea;border-color:#e5a9a4;color:#1a1d26}
+.paper .card{background:#ffffff;border-color:#ddd6c6;color:#1a1d26}
+.paper .card .mut{color:#5a6272}
+.paper .card strong,.paper .card .stat{color:#111}
+.paper .btn.ghost{color:#1a1d26;border-color:#c9c2b2;background:#ffffff}
+.paper .eyebrow{color:#5a7a00}
 textarea{width:100%;min-height:120px;background:#0a0f1e;color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:12px}
 input,select{background:#0a0f1e;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:9px 11px}
 details{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:10px 0;background:var(--panel2)}
