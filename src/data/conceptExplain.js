@@ -1,5 +1,6 @@
 // Giải thích khái niệm cho tab thứ 5, key theo day.id, mảng khớp đúng thứ tự khái niệm đã enrich (days.js + dayExtra.js).
 // Mỗi mục: what (nó là gì), role (nhiệm vụ + triệu chứng khi sai), map (breadcrumb + thành phần kề bên), connects (>=3: cùng ngày, sang ngày khác có field day, lên hệ thống lớn hơn).
+// Ngày 11–20 đã viết lại sang shape (2026-10-29): thêm field optional shape/difficulty/thresholds/dontUse/quiz; các ngày khác giữ nguyên khuôn cũ.
 // Không sửa days.js gốc; file này chỉ bổ sung lớp giải thích.
 export const CONCEPT_EXPLAIN = {
   "1": [
@@ -742,860 +743,1191 @@ export const CONCEPT_EXPLAIN = {
       ]
     }
   ],
-  "11": [
+  "11":   [
     {
-      "what": "Flyway và Liquibase là công cụ quản lý thay đổi schema bằng các bản migration có phiên bản và chạy theo đúng thứ tự. Mỗi migration chỉ chạy một lần và được ghi lại, nên mọi môi trường đều đi qua cùng một lịch sử thay đổi. Bản chất của nó là biến schema thành mã nguồn có thể xem lại, thay vì để ai đó sửa tay trực tiếp trên database.",
-      "role": "Nó giải quyết việc schema ở các môi trường lệch nhau mà không ai biết bản thật là gì. Nếu thiếu nó hoặc sửa tay schema production, deploy sau có thể chạy trên schema khác với schema đã test, gây lỗi khó truy vết. Triệu chứng cụ thể là code chạy tốt ở dev nhưng lỗi thiếu cột hoặc sai kiểu ở production.",
+      "what": "Flyway và Liquibase là công cụ biến schema thành mã nguồn có phiên bản: mỗi thay đổi là một file migration đánh số V1, V2, V3..., công cụ ghi lại file nào đã chạy trên từng môi trường và chỉ chạy tiếp những file chưa chạy, đúng thứ tự số. Nhờ vậy dev, staging và production đi qua cùng một lịch sử thay đổi thay vì mỗi nơi được sửa tay một kiểu.",
+      "role": "Sửa tay schema production thì môi trường test và môi trường thật âm thầm lệch nhau: code chạy tốt ở dev vì dev đã có cột mới, lên production thì lỗi thiếu cột hoặc sai kiểu, và không ai biết bản schema thật là gì vì không có file nào ghi lại. Migration có phiên bản làm cho lịch sử schema xem lại được và deploy lặp lại được.",
       "map": "Hệ thống đặt hàng > Tầng dữ liệu > Migration > Flyway/Liquibase, kề bên schema của bảng đơn hàng và sản phẩm, pipeline triển khai, script seed dữ liệu, và công cụ kiểm tra schema sau deploy",
       "connects": [
         {
-          "t": "Migration backward compatible",
+          "t": "Vì migration chỉ an toàn khi mỗi bước tương thích với cả code cũ lẫn code mới, nên dùng Flyway hay Liquibase mà vẫn đổi sập trong một lần deploy thì công cụ cũng không cứu được, và đó là lý do bước đổi schema phải tách nhỏ theo nguyên tắc ở mục kế tiếp.",
           "day": 11
         },
         {
-          "t": "Persistence contract",
+          "t": "Vì schema đổi theo thời gian nên persistence contract cũng phải ghi rõ entity nào thay đổi cùng migration nào, nếu không spec ghi một đằng mà bảng thật lại một nẻo và frontend gọi API theo contract cũ sẽ lỗi.",
           "day": 11
         },
         {
-          "t": "CI/CD và thứ tự chạy migration trong pipeline",
+          "t": "Vì pipeline là nơi duy nhất chạy migration một cách có kiểm soát, nên việc migration chạy ở bước nào của CI/CD quyết định deploy có lặp lại và rollback được hay không, chứ không phải chạy tay trên từng máy.",
           "day": 26
         },
         {
-          "t": "Quy trình deploy có thể lặp lại và rollback được của toàn bộ hệ thống"
+          "t": "Vì mọi thay đổi schema đều đi qua cùng một lịch sử có phiên bản, nên toàn bộ hệ thống mới có một quy trình deploy lặp lại được: cùng một code, cùng một chuỗi migration, cho ra cùng một schema ở mọi môi trường."
         }
-      ]
+      ],
+      "shape": "definition",
+      "difficulty": 1,
+      "thresholds": "Một migration đã chạy trên bất kỳ môi trường nào thì không được sửa nội dung nữa; muốn sửa thì viết migration mới. Sửa file đã chạy sẽ làm checksum lệch và môi trường đó từ chối chạy tiếp.",
+      "dontUse": "Không dùng migration để sửa dữ liệu theo kiểu một lần rồi bỏ mà không ghi lại, và không dùng sửa tay trực tiếp trên production để chữa cháy rồi quên đồng bộ ngược về file migration.",
+      "quiz": {
+        "q": "Bảng orders ở production đã chạy V2__add_discount.sql. Bạn phát hiện V2 viết sai tên cột. Cách sửa đúng là gì?",
+        "answer": "Viết migration mới V3 sửa lại tên cột, không sửa file V2.",
+        "why": "V2 đã được ghi là đã chạy, nên sửa file V2 sẽ làm checksum lệch ở production và các môi trường đã chạy nó; migration mới giữ lịch sử chạy nhất quán ở mọi nơi."
+      }
     },
     {
-      "what": "Migration backward compatible là cách đổi schema theo nhiều bước mà code cũ và code mới đều chạy được trong thời gian chuyển đổi. Ví dụ thêm cột bắt buộc phải làm ba bước: thêm cột nullable trước, backfill dữ liệu, rồi mới siết thành NOT NULL. Bản chất của nó là không bao giờ bắt code và schema phải đổi đồng thời trong một lần deploy.",
-      "role": "Nó giải quyết việc deploy sập giữa chừng vì code mới gặp schema cũ hoặc ngược lại. Nếu đổi kiểu hoặc xóa cột ngay trong lúc deploy, request đang chạy có thể lỗi hàng loạt và rollback code cũng không cứu được vì migration đã chạy. Triệu chứng cụ thể là deploy xong API lỗi thiếu cột hoặc dữ liệu cũ chưa có giá trị cho cột bắt buộc mới.",
+      "what": "Migration backward compatible là cách chia một thay đổi schema thành nhiều bước deploy sao cho trong suốt thời gian chuyển đổi, cả code cũ đang chạy và code mới sắp lên đều đọc ghi được trên cùng schema. Ví dụ thêm cột bắt buộc: bước 1 thêm cột dạng nullable (cho phép rỗng) và deploy code đọc được cả giá trị rỗng lẫn có giá trị, bước 2 backfill (điền giá trị cho dữ liệu cũ), bước 3 mới siết thành NOT NULL (không cho rỗng) và dọn code cũ.",
+      "role": "Đổi kiểu hoặc xóa cột ngay trong một lần deploy sẽ làm request đang chạy lỗi hàng loạt, và rollback code cũng không cứu được vì migration đã chạy rồi, schema đã đổi. Chia nhỏ bước thì mỗi bước đều có thể lùi lại được: code mới vẫn chạy trên schema cũ, code cũ vẫn chạy trên schema mới ở mức tối thiểu.",
       "map": "Hệ thống đặt hàng > Tầng dữ liệu > Migration > Thay đổi schema từng bước, kề bên code backend đang chạy, bảng đơn hàng và sản phẩm, pipeline triển khai, và kế hoạch rollback",
       "connects": [
         {
-          "t": "Flyway/Liquibase",
+          "t": "Vì Flyway hay Liquibase chỉ đảm bảo migration chạy đúng thứ tự, còn việc mỗi migration có làm code cũ sập hay không lại phụ thuộc vào cách chia bước, nên công cụ migration và nguyên tắc tương thích ngược phải đi cùng nhau, thiếu một trong hai là deploy vẫn sập.",
           "day": 11
         },
         {
-          "t": "Persistence contract",
+          "t": "Vì persistence contract ghi entity và API nào thay đổi, nên khi thêm cột bắt buộc, contract phải ghi rõ bước nào code bắt đầu đọc cột mới và bước nào mới được phép siết NOT NULL, nếu không frontend và backend sẽ lệch nhau ngay giữa đợt deploy.",
           "day": 11
         },
         {
-          "t": "Chiến lược blue-green, canary và feature flag khi deploy",
+          "t": "Vì blue-green và canary đều chạy song song bản cũ và bản mới trong một khoảng thời gian, nên nếu migration không tương thích ngược thì chiến lược deploy an toàn nào cũng vô nghĩa: bản cũ sẽ lỗi ngay trên schema mới.",
           "day": 26
         },
         {
-          "t": "Độ tin cậy khi triển khai của toàn bộ hệ thống"
+          "t": "Vì rollback chỉ khả thi khi schema mới vẫn nuôi được code cũ, nên độ tin cậy khi triển khai của toàn bộ hệ thống phụ thuộc trực tiếp vào việc mỗi migration có tương thích ngược hay không, chứ không phụ thuộc vào việc deploy nhanh hay chậm."
         }
-      ]
+      ],
+      "shape": "decision",
+      "difficulty": 2,
+      "thresholds": "Backfill bảng lớn phải chia theo lô, ví dụ 1.000-10.000 dòng mỗi lô, thay vì UPDATE một lần cả triệu dòng gây khóa bảng lâu; bước siết NOT NULL chỉ làm khi đã kiểm tra không còn dòng nào rỗng.",
+      "dontUse": "Không dùng khi thay đổi là xóa cột hay đổi kiểu mà code cũ vẫn đọc cột cũ: khi đó phải deploy code ngừng đọc cột cũ trước, rồi mới xóa cột ở một đợt deploy sau.",
+      "quiz": {
+        "q": "Bảng orders có 1 triệu dòng, cần thêm cột discount_code bắt buộc, mặc định là NONE. Deploy một bước: thêm cột NOT NULL DEFAULT NONE rồi deploy code mới cùng lúc. Rủi ro lớn nhất là gì?",
+        "answer": "Code cũ đang chạy sẽ lỗi hoặc dữ liệu cũ chưa được backfill đúng ý trước khi code mới lên; và nếu deploy lỗi thì rollback code không cứu được vì migration đã chạy.",
+        "why": "Một bước duy nhất bắt schema và code phải đổi đồng thời, đúng điều nguyên tắc tương thích ngược cấm: phải thêm nullable trước, backfill theo lô, rồi mới siết NOT NULL."
+      }
     },
     {
-      "what": "Persistence contract là cam kết bằng văn bản cho mỗi tính năng: dữ liệu sống ở đâu, thuộc entity nào, API nào đọc và ghi, đồng bộ lúc nào. Nếu không ghi rõ local-only với lý do thì mặc định dữ liệu người dùng phải lưu ở server. Bản chất của nó là buộc spec phải trả lời câu hỏi về nơi ở của dữ liệu trước khi viết code.",
-      "role": "Nó giải quyết việc frontend tự chọn nơi lưu dữ liệu theo thói quen, thường là bộ nhớ cục bộ của trình duyệt. Nếu thiếu contract, dữ liệu có thể mất khi đổi thiết bị hoặc xóa bộ nhớ trình duyệt dù backend đã có sẵn API. Triệu chứng cụ thể là tính năng chạy tốt trên một máy nhưng giỏ hàng hoặc hồ sơ biến mất trên máy khác.",
+      "what": "Persistence contract là một cam kết bằng văn bản cho mỗi tính năng, trả lời đủ: dữ liệu sống ở đâu, thuộc entity nào, API nào đọc, API nào ghi, đồng bộ lúc nào, và khi mất mạng hay đổi thiết bị thì chuyện gì xảy ra. Quy ước mặc định: nếu không ghi rõ local-only (chỉ lưu ở máy người dùng) kèm lý do, thì dữ liệu người dùng phải lưu ở server.",
+      "role": "Thiếu contract, frontend sẽ tự chọn nơi lưu theo thói quen, thường là bộ nhớ cục bộ của trình duyệt, và tính năng vẫn chạy tốt trên một máy nên không ai phát hiện. Tới khi người dùng đổi thiết bị hoặc xóa bộ nhớ trình duyệt, giỏ hàng hay hồ sơ biến mất dù backend đã có sẵn API và hệ thống vẫn báo thành công.",
       "map": "Hệ thống đặt hàng > Tầng ứng dụng > Đặc tả tính năng > Persistence contract, kề bên entity giỏ hàng và hồ sơ người dùng, API đọc và ghi, cơ chế đồng bộ khi mất mạng, và thiết kế dữ liệu tổng thể",
       "connects": [
         {
-          "t": "Bài học giỏ hàng",
+          "t": "Vì bài học giỏ hàng cho thấy hậu quả cụ thể của việc bỏ trống contract, nên persistence contract chính là biện pháp ngăn lỗi đó lặp lại ở wishlist hay hồ sơ: viết rõ nơi lưu trước khi viết code thì frontend không còn quyền tự chọn localStorage.",
           "day": 11
         },
         {
-          "t": "Flyway/Liquibase",
+          "t": "Vì Flyway và Liquibase quản lý schema của entity, nên contract ghi entity nào cũng ngầm ghi migration nào đi kèm: đổi entity mà không có migration tương ứng thì contract đẹp trên giấy nhưng bảng thật không có chỗ chứa dữ liệu.",
           "day": 11
         },
         {
-          "t": "Thiết kế dữ liệu tổng thể ở checkpoint tuần dữ liệu",
+          "t": "Vì checkpoint tuần dữ liệu tổng hợp mọi quyết định của tuần, nên thiết kế tổng thể ở đó phải kiểm tra lại từng persistence contract đã viết, thay vì vẽ lại schema từ đầu và bỏ sót nơi lưu của một tính năng.",
           "day": 14
         },
         {
-          "t": "Trải nghiệm người dùng xuyên thiết bị của toàn bộ sản phẩm"
+          "t": "Vì người dùng kỳ vọng dữ liệu của mình theo mình qua mọi thiết bị, nên trải nghiệm xuyên thiết bị của toàn bộ sản phẩm chỉ đáng tin khi mọi tính năng đều có contract ghi rõ dữ liệu sống ở server và đồng bộ lúc nào."
         }
-      ]
+      ],
+      "shape": "decision",
+      "difficulty": 1,
+      "dontUse": "Không dùng local-only cho dữ liệu người dùng đã đăng nhập mà không ghi rõ lý do và cách merge khi đăng nhập; và không dùng contract viết chung chung kiểu lưu ở server mà không ghi entity, API và thời điểm sync cụ thể.",
+      "quiz": {
+        "q": "Spec của tính năng wishlist chỉ ghi: người dùng bấm tim thì sản phẩm được lưu. Một reviewer nói spec này chưa đủ. Thiếu quan trọng nhất là gì?",
+        "answer": "Thiếu persistence contract: lưu ở server (entity nào, API ghi nào, sync lúc nào) hay local-only với lý do gì, và đổi thiết bị thì wishlist ra sao.",
+        "why": "Không ghi nơi lưu thì frontend có thể chọn localStorage, wishlist sẽ mất khi đổi thiết bị dù tính năng chạy tốt trên một máy, đúng lỗi đã xảy ra với giỏ hàng."
+      }
     },
     {
-      "what": "Bài học giỏ hàng là trường hợp backend đã có đủ API giỏ hàng nhưng frontend chỉ merge một lần lúc login rồi sau đó chỉ lưu ở máy người dùng. Nguyên nhân gốc không phải thiếu API mà là spec không bắt buộc dữ liệu sống ở đâu. Bản chất của bài học là một spec thiếu persistence contract sẽ để implementation tự quyết định nơi lưu dữ liệu.",
-      "role": "Nó cho thấy hậu quả thực tế của việc bỏ trống persistence contract: dữ liệu người dùng không đồng bộ và dễ mất. Nếu lặp lại lỗi này ở wishlist hay hồ sơ, người dùng sẽ mất dữ liệu khi đổi thiết bị dù hệ thống vẫn báo thành công. Triệu chứng cụ thể là giỏ hàng đầy trên điện thoại nhưng trống trên máy tính, hoặc mất sau khi xóa bộ nhớ trình duyệt.",
+      "what": "Bài học giỏ hàng là một sự cố thật: backend đã có đủ API giỏ hàng, nhưng frontend chỉ merge (gộp) giỏ ẩn danh vào giỏ tài khoản một lần lúc đăng nhập, sau đó mọi thao tác thêm, xóa đều chỉ lưu ở máy người dùng. Nguyên nhân gốc không phải thiếu API mà là spec không bắt buộc dữ liệu sống ở đâu, nên implementation tự quyết định nơi lưu và chọn cách dễ nhất.",
+      "role": "Hậu quả là dữ liệu không đồng bộ mà không có lỗi nào hiện ra: giỏ đầy trên điện thoại nhưng trống trên máy tính, hoặc mất hẳn sau khi xóa bộ nhớ trình duyệt, trong khi hệ thống vẫn báo thêm vào giỏ thành công. Lỗi này lặp lại ở bất kỳ tính năng nào có dữ liệu người dùng mà spec bỏ trống persistence contract.",
       "map": "Hệ thống đặt hàng > Tầng ứng dụng > Giỏ hàng > Đồng bộ giỏ hàng, kề bên API giỏ hàng ở backend, bộ nhớ cục bộ của trình duyệt, luồng đăng nhập và merge giỏ, và hồ sơ người dùng",
       "connects": [
         {
-          "t": "Persistence contract",
+          "t": "Vì bài học này chứng minh một spec thiếu persistence contract sẽ để implementation tự chọn nơi lưu, nên cách sửa bền nhất không phải sửa code giỏ hàng một lần mà là bắt mọi spec sau này phải ghi contract trước, nếu không lỗi sẽ tái diễn ở tính năng khác.",
           "day": 11
         },
         {
-          "t": "Migration backward compatible",
+          "t": "Vì migration backward compatible dạy rằng thay đổi phải chia bước để code cũ và mới cùng chạy được, nên khi sửa giỏ hàng từ local-only sang server-persisted cũng phải chia bước: deploy API đồng bộ trước, rồi mới đổi frontend sang ghi server ngay, tránh mất giỏ của người dùng đang dùng bản cũ.",
           "day": 11
         },
         {
-          "t": "Thiết kế dữ liệu cho giỏ hàng ở checkpoint tuần dữ liệu",
+          "t": "Vì checkpoint tuần dữ liệu yêu cầu thiết kế cho giỏ hàng phải ghi rõ schema, transaction và tình huống mâu thuẫn, nên giỏ hàng là bài kiểm tra đầu tiên của checkpoint: nếu thiết kế ngày 14 vẫn để giỏ local-only không lý do thì checkpoint chưa đạt.",
           "day": 14
         },
         {
-          "t": "Độ tin cậy của dữ liệu người dùng trong toàn bộ sản phẩm"
+          "t": "Vì người dùng tin rằng giỏ hàng là của mình chứ không phải của một thiết bị, nên độ tin cậy của dữ liệu người dùng trong toàn bộ sản phẩm sụp đổ nhanh nhất qua những lần mất dữ liệu im lặng kiểu này, nhanh hơn cả một lỗi hiện rõ."
         }
-      ]
+      ],
+      "shape": "incident",
+      "difficulty": 1,
+      "thresholds": "Giỏ hàng phải đồng bộ lên server ngay khi người dùng thêm hoặc xóa, không chờ tới lúc logout hay đăng nhập lần sau; giỏ ẩn danh chưa đăng nhập là trường hợp duy nhất được phép local tạm, và phải merge vào giỏ tài khoản ngay khi đăng nhập.",
+      "dontUse": "Không dùng merge một lần lúc đăng nhập làm cơ chế đồng bộ duy nhất, vì sau lần merge đó mọi thay đổi tiếp theo sẽ chỉ nằm ở một máy.",
+      "quiz": {
+        "q": "User thêm 3 món vào giỏ trên điện thoại, sau đó mở máy tính và đăng nhập cùng tài khoản thì giỏ trống. Backend có đủ API cart và không có lỗi nào trong log. Nguyên nhân khả dĩ nhất là gì?",
+        "answer": "Frontend chỉ lưu giỏ ở máy người dùng sau lần merge lúc đăng nhập, không ghi lên server ngay khi thêm món.",
+        "why": "API đầy đủ mà dữ liệu vẫn không qua được thiết bị khác thì nơi lưu mới là vấn đề, và triệu chứng giỏ trống trên thiết bị thứ hai đúng là dấu hiệu của local-only, không phải lỗi API hay database."
+      }
     }
   ],
-  "12": [
+  "12":   [
     {
-      "what": "Cache-aside, write-through và write-behind là ba cách phân công ai chịu trách nhiệm ghi cache. Cache-aside để ứng dụng tự đọc cache, trượt thì đọc database rồi ghi lại cache. Write-through ghi database và cache cùng lúc, còn write-behind ghi cache trước rồi mới ghi database sau. Bản chất của chúng là ba cách đánh đổi khác nhau giữa tốc độ, độ đúng của dữ liệu và rủi ro mất dữ liệu.",
-      "role": "Chúng giải quyết việc đọc nhanh hơn mà vẫn kiểm soát được lúc cache và database lệch nhau. Nếu chọn sai, hệ thống có thể trả dữ liệu cũ lâu hoặc mất dữ liệu tưởng là đã lưu. Triệu chứng cụ thể là giá đã đổi nhưng trang vẫn hiện giá cũ, hoặc write-behind gặp sự cố trước khi ghi database thì dữ liệu người dùng vừa lưu biến mất.",
+      "what": "Cache-aside, write-through và write-behind là ba cách phân công ai chịu trách nhiệm ghi cache. Cache-aside: ứng dụng tự đọc cache, trượt (miss) thì đọc database rồi ghi lại cache. Write-through: mỗi lần ghi thì ghi database và cache cùng lúc, nên đọc sau đó luôn đúng. Write-behind: ghi cache trước, trả kết quả cho người dùng ngay, database được ghi sau một cách bất đồng bộ.",
+      "role": "Chọn sai chiến lược thì hoặc trả dữ liệu cũ lâu, hoặc mất dữ liệu tưởng là đã lưu. Ví dụ cụ thể: giá đổi từ 100.000 thành 120.000 trong database nhưng cache-aside không invalidate (xóa cache cũ) thì trang vẫn hiện 100.000; còn write-behind mà máy chủ sập trước khi flush (đẩy dữ liệu xuống database) thì dữ liệu người dùng vừa lưu biến mất dù màn hình đã báo thành công.",
       "map": "Hệ thống đặt hàng > Tầng dữ liệu > Cache > Chiến lược ghi cache, kề bên Redis, database chính, application cache, và cơ chế invalidate khi dữ liệu đổi",
       "connects": [
         {
-          "t": "TTL và eviction",
+          "t": "Vì cache-aside chỉ đúng khi có TTL và invalidate đi kèm, nên chọn chiến lược ghi mà không chọn kèm TTL và eviction thì cache vẫn phình vô hạn hoặc giữ dữ liệu cũ mãi, và chiến lược đúng một nửa vẫn thành sai.",
           "day": 12
         },
         {
-          "t": "Cache stampede",
+          "t": "Vì cache stampede xảy ra đúng lúc một mục hot hết hạn và mọi request cùng đổ về database, nên chiến lược ghi cache quyết định stampede nặng hay nhẹ: write-through làm mới cache ngay khi ghi nên ít bị hết hạn đồng loạt hơn cache-aside chỉ làm mới khi có người đọc.",
           "day": 12
         },
         {
-          "t": "Cache nhiều tầng từ trình duyệt tới database",
+          "t": "Vì cache nhiều tầng từ trình duyệt tới CDN, gateway, application rồi Redis và database đều phải invalidate, nên một chiến lược ghi đúng ở tầng Redis vẫn chưa đủ nếu tầng CDN hay trình duyệt còn giữ bản cũ.",
           "day": 24
         },
         {
-          "t": "Tốc độ đọc và độ đúng của dữ liệu trong toàn bộ hệ thống"
+          "t": "Vì tốc độ đọc và độ đúng của dữ liệu luôn đánh đổi nhau, nên toàn bộ hệ thống phải chọn chiến lược theo từng loại dữ liệu: dữ liệu đổi chậm thì ưu tiên tốc độ, dữ liệu tiền và tồn kho thì ưu tiên độ đúng dù đọc chậm hơn."
         }
-      ]
+      ],
+      "shape": "compare",
+      "difficulty": 2,
+      "dontUse": "Không dùng write-behind cho dữ liệu không được phép mất như đơn hàng đã thanh toán hay số dư ví, vì crash trước khi flush là mất dữ liệu thật dù người dùng đã thấy báo thành công.",
+      "quiz": {
+        "q": "Hệ thống dùng write-behind cho cache tồn kho. Máy chủ cache sập lúc 14:00, trước khi flush đợt ghi 13:55-14:00 xuống database. Người dùng đã thấy màn hình báo đặt hàng thành công. Điều gì xảy ra?",
+        "answer": "Đợt ghi 13:55-14:00 có thể mất hẳn, database không biết những đơn đó đã trừ kho, dù người dùng đã thấy thành công.",
+        "why": "Write-behind trả kết quả trước khi database ghi xong, nên khoảng giữa ghi cache và flush là cửa sổ mất dữ liệu; với dữ liệu không được phép mất thì phải dùng write-through hoặc ghi database trước."
+      }
     },
     {
-      "what": "TTL là thời gian sống của một mục cache, hết hạn thì lần đọc sau phải lấy lại từ nguồn thật. Eviction là chính sách đuổi mục ít dùng nhất khi cache đầy. Bản chất của hai cơ chế này là giới hạn cho cache: một giới hạn về thời gian, một giới hạn về dung lượng. Cache không có TTL thành dữ liệu cũ vĩnh viễn, cache không có giới hạn thành rò rỉ bộ nhớ.",
-      "role": "Chúng giải quyết việc cache phình vô hạn và dữ liệu cũ tồn tại mãi. Nếu thiếu TTL hoặc không invalidate khi dữ liệu đổi, người dùng thấy giá cũ hoặc trạng thái hết hàng sai cả ngày. Triệu chứng cụ thể là sửa giá trong database nhưng trang vẫn hiện giá cũ, hoặc bộ nhớ của cache tăng dần cho tới khi hết bộ nhớ.",
+      "what": "TTL (time-to-live, thời gian sống) là hạn dùng của một mục cache: hết TTL thì lần đọc sau phải lấy lại từ nguồn thật. Eviction là chính sách đuổi mục ra khỏi cache khi cache đầy, phổ biến nhất là LRU (least recently used, đuổi mục ít dùng nhất gần đây). Hai cơ chế này là hai loại giới hạn khác nhau: TTL giới hạn theo thời gian, eviction giới hạn theo dung lượng.",
+      "role": "Thiếu TTL thì dữ liệu cũ tồn tại mãi: sửa giá trong database nhưng trang vẫn hiện giá cũ cả ngày. Thiếu giới hạn dung lượng thì cache phình thành rò rỉ bộ nhớ: cứ thêm mục mới mà không đuổi mục cũ, cuối cùng máy chủ cache hết bộ nhớ. Hai lỗi này đều im lặng vì cache vẫn trả kết quả nhanh, chỉ là kết quả sai hoặc máy chủ càng ngày càng nặng.",
       "map": "Hệ thống đặt hàng > Tầng dữ liệu > Cache > Redis (in-memory), kề bên database chính (SQL/MongoDB), application cache (Caffeine), CDN, và cơ chế invalidate",
       "connects": [
         {
-          "t": "Cache-aside, write-through, write-behind",
+          "t": "Vì chiến lược ghi cache chỉ nói ai ghi, còn TTL và eviction mới nói mục cache sống bao lâu và khi nào bị đuổi, nên chọn cache-aside hay write-through mà không đặt TTL thì dữ liệu cũ vẫn tồn tại mãi bất kể chiến lược nào.",
           "day": 12
         },
         {
-          "t": "Cache penetration",
+          "t": "Vì cache penetration là trường hợp key không tồn tại cứ xuyên qua cache, nên TTL ngắn cho kết quả rỗng chính là cách biến một key không tồn tại thành một mục cache có hạn dùng, thay vì để nó trượt mãi.",
           "day": 12
         },
         {
-          "t": "Spec giới hạn tài nguyên cho cache",
+          "t": "Vì spec giới hạn tài nguyên ngày 1 bắt mọi cache phải có số mục tối đa, TTL và metric theo dõi, nên TTL và eviction ở đây không phải tùy chọn trang trí mà là phần bắt buộc của spec đó, thiếu là coi như chưa thiết kế xong.",
           "day": 1
         },
         {
-          "t": "Bộ nhớ và độ ổn định của toàn bộ hệ thống khi cache phình"
+          "t": "Vì bộ nhớ của cache tăng không giới hạn sẽ kéo cả máy chủ xuống, nên bộ nhớ và độ ổn định của toàn bộ hệ thống phụ thuộc trực tiếp vào việc TTL và eviction có được đặt và đo bằng metric hay không."
         }
-      ]
+      ],
+      "shape": "trace",
+      "difficulty": 1,
+      "thresholds": "Ví dụ cụ thể từ gói vật liệu: danh sách sản phẩm TTL 10 phút, tối đa 10.000 mục, evict LRU khi đầy; tồn kho đổi liên tục thì TTL chỉ 30-60 giây, hoặc tách cache giá và tồn kho ra riêng với TTL khác nhau. TTL phải chọn theo tốc độ đổi của từng loại dữ liệu, không dùng một TTL chung cho mọi thứ.",
+      "dontUse": "Không dùng TTL dài cho dữ liệu đổi liên tục như tồn kho hay trạng thái hết hàng, và không để cache không giới hạn số mục với lý do bộ nhớ còn nhiều, vì bộ nhớ còn nhiều hôm nay không ngăn được leak ngày mai.",
+      "quiz": {
+        "q": "Giá sản phẩm đổi 2 lần/ngày, tồn kho đổi mỗi khi có đơn. Cache đang dùng chung một key chứa cả giá và tồn kho, TTL 10 phút. Vấn đề là gì và sửa ra sao?",
+        "answer": "Tồn kho sẽ sai tối đa 10 phút sau mỗi đơn, vì key chung bị khóa theo TTL của giá; sửa bằng cách tách cache giá (TTL dài) và tồn kho (TTL 30-60 giây) hoặc invalidate key ngay khi tồn kho đổi.",
+        "why": "TTL phải theo tốc độ đổi của từng loại dữ liệu; gộp hai tốc độ đổi khác nhau vào một key thì loại đổi nhanh bị ép theo TTL của loại đổi chậm."
+      }
     },
     {
-      "what": "Cache stampede là hiện tượng nhiều request cùng đổ về database cùng lúc khi một mục cache hot hết hạn. Trước đó mọi request đều đọc cache nên database rảnh, ngay sau khi hết hạn mọi request đều trượt cache cùng lúc. Bản chất của nó là một điểm hết hạn chung biến thành một đợt tấn công nội bộ vào database.",
-      "role": "Nó giải quyết nguy cơ database quá tải đúng lúc cache hết hạn dù lượng truy cập không tăng. Nếu không xử lý, database có thể chậm hoặc sập dây chuyền sang các tính năng khác. Triệu chứng cụ thể là database đột nhiên quá tải đúng chu kỳ hết hạn của cache, rồi tự hết khi cache được làm mới.",
+      "what": "Cache stampede là hiện tượng một mục cache hot (được đọc rất nhiều) hết hạn, và ngay khoảnh khắc đó hàng loạt request đang chờ đều trượt cache cùng lúc rồi cùng đổ về database. Trước khi hết hạn, database gần như rảnh vì mọi request đều đọc cache; sau khi hết hạn, database nhận một đợt truy vấn dồn dập dù lượng truy cập thật không tăng.",
+      "role": "Đợt dồn dập này có thể làm database chậm hoặc sập, rồi lan sang các tính năng khác dùng chung database. Dấu hiệu nhận biết rất đặc trưng: database đột nhiên quá tải đúng chu kỳ hết hạn của cache, ví dụ cứ mỗi 10 phút lại quá tải một lần, rồi tự hết khi cache được làm mới, và lặp lại đúng chu kỳ sau đó.",
       "map": "Hệ thống đặt hàng > Tầng dữ liệu > Cache > Làm mới cache hot, kề bên Redis, database chính, hàng đợi request đang chờ cache mới, và cơ chế làm mới sớm trước khi hết hạn",
       "connects": [
         {
-          "t": "TTL và eviction",
+          "t": "Vì stampede bắt đầu từ một TTL chung cho mọi key, nên TTL và eviction chính là nơi gây ra nó: đặt cùng một TTL cho mọi key hot thì mọi key sẽ hết hạn cùng nhau, và sửa TTL là bước đầu tiên để phá chu kỳ đó.",
           "day": 12
         },
         {
-          "t": "Cache-aside, write-through, write-behind",
+          "t": "Vì chiến lược ghi cache quyết định cache được làm mới khi nào, nên cache-aside chỉ làm mới khi có người đọc sẽ dễ stampede hơn write-through làm mới ngay khi ghi, và chọn chiến lược cũng là chọn mức độ phơi nhiễm với stampede.",
           "day": 12
         },
         {
-          "t": "Timeout và circuit breaker để lỗi không lan",
+          "t": "Vì một đợt stampede có thể làm database chậm tới mức request timeout hàng loạt, nên timeout và circuit breaker ở tầng resilience là hàng rào chặn đợt sóng đó lan thành sập dây chuyền sang các service khác.",
           "day": 18
         },
         {
-          "t": "Khả năng chịu tải đột biến của toàn bộ hệ thống"
+          "t": "Vì stampede là một dạng tải đột biến do chính hệ thống tự tạo ra chứ không phải do người dùng tăng đột biến, nên khả năng chịu tải đột biến của toàn bộ hệ thống phải tính cả tải nội sinh này, không chỉ tính traffic từ bên ngoài."
         }
-      ]
+      ],
+      "shape": "incident",
+      "difficulty": 2,
+      "thresholds": "Ví dụ: 1.000 request cùng đổ về database khi một key hot hết hạn. Cách giảm: jitter (lệch ngẫu nhiên) TTL, ví dụ TTL gốc 10 phút cộng thêm lệch ngẫu nhiên vài chục giây cho mỗi key để chúng không hết hạn cùng lúc; hoặc lock để chỉ một request làm mới cache, các request khác chờ; hoặc làm mới sớm trước khi hết hạn.",
+      "dontUse": "Không dùng cách chữa là tăng connection pool của database để hứng stampede, vì đó chỉ dời điểm sập từ database sang bộ nhớ hoặc sang tầng khác, và không phá được chu kỳ hết hạn đồng loạt.",
+      "quiz": {
+        "q": "Database cứ mỗi đúng 10 phút lại quá tải vài giây rồi tự hết, traffic không tăng. Cache danh sách sản phẩm có TTL đúng 10 phút cho mọi key. Chẩn đoán và cách sửa là gì?",
+        "answer": "Cache stampede: mọi key hết hạn cùng lúc mỗi 10 phút. Sửa bằng jitter TTL cho mỗi key lệch nhau, hoặc lock chỉ một request làm mới, hoặc làm mới sớm.",
+        "why": "Chu kỳ quá tải trùng khớp chu kỳ TTL là dấu hiệu của hết hạn đồng loạt, không phải traffic thật; tăng pool database không phá được chu kỳ đó."
+      }
     },
     {
-      "what": "Cache penetration là hiện tượng request hỏi key không tồn tại cứ xuyên qua cache xuống database lần nào cũng vậy. Vì key không có dữ liệu nên cache không có gì để giữ, lần sau lại trượt tiếp. Bản chất của nó là cache chỉ giúp được khi dữ liệu tồn tại, còn dữ liệu không tồn tại thì cache mặc định là vô dụng.",
-      "role": "Nó giải quyết việc database bị quét bằng hàng loạt id bịa hoặc id đã xóa. Nếu không xử lý, kẻ xấu hoặc crawler có thể làm database quá tải mà cache không chặn được gì. Triệu chứng cụ thể là database chịu nhiều query cho các id không tồn tại, trong khi tỉ lệ hit của cache vẫn thấp bất thường.",
+      "what": "Cache penetration là hiện tượng request hỏi một key không tồn tại, ví dụ productId bịa hoặc id đã xóa, cứ xuyên qua cache xuống database lần nào cũng vậy. Vì key không có dữ liệu nên cache không có gì để giữ, lần sau lại trượt tiếp, và cache coi như vô dụng với đúng loại request đó.",
+      "role": "Nguy hiểm ở chỗ kẻ xấu hoặc crawler có thể quét hàng loạt id không tồn tại để làm database quá tải mà cache không chặn được gì, trong khi tỉ lệ hit của cache vẫn thấp bất thường. Database phải trả lời câu không có dữ liệu, lần nào cũng quét, dù đáp án luôn là không.",
       "map": "Hệ thống đặt hàng > Tầng dữ liệu > Cache > Bảo vệ database khỏi key không tồn tại, kề bên Redis, database chính, lớp kiểm tra tính hợp lệ của id, và cơ chế cache kết quả rỗng",
       "connects": [
         {
-          "t": "Cache-aside, write-through, write-behind",
+          "t": "Vì cache-aside và write-through đều chỉ cache được dữ liệu tồn tại, nên penetration là lỗ hổng chung của mọi chiến lược ghi: chiến lược nào cũng cần thêm biện pháp riêng cho key không tồn tại, nếu không database vẫn bị quét.",
           "day": 12
         },
         {
-          "t": "TTL và eviction",
+          "t": "Vì TTL là hạn dùng của một mục cache, nên cache kết quả rỗng với TTL ngắn chính là cách dùng TTL để chặn penetration: lần sau hỏi cùng key không tồn tại sẽ hit cache rỗng thay vì xuống database.",
           "day": 12
         },
         {
-          "t": "Rate limiter chống quét API",
+          "t": "Vì rate limiter giới hạn tốc độ request theo client, nên khi penetration đến từ một nguồn quét hàng loạt, rate limiter là lớp chặn ngoài cùng trước khi database phải trả lời từng id bịa.",
           "day": 18
         },
         {
-          "t": "An toàn và độ ổn định của toàn bộ hệ thống trước lưu lượng xấu"
+          "t": "Vì một đợt quét id không tồn tại có thể làm database quá tải giống như một đợt tấn công, nên an toàn và độ ổn định của toàn bộ hệ thống trước lưu lượng xấu phụ thuộc vào việc có chặn penetration ở tầng cache hay không."
         }
-      ]
+      ],
+      "shape": "incident",
+      "difficulty": 2,
+      "thresholds": "Cache kết quả rỗng với TTL ngắn, ví dụ 30-60 giây, đủ để chặn đợt quét lặp lại cùng id mà không giữ đáp án rỗng quá lâu nếu dữ liệu thật xuất hiện sau đó. Biện pháp mạnh hơn là bloom filter, một cấu trúc xác suất nhỏ gọn cho biết một key chắc chắn không tồn tại hay có thể tồn tại, để chặn key chắc chắn không tồn tại ngay ở tầng cache.",
+      "dontUse": "Không dùng cache kết quả rỗng với TTL dài cho dữ liệu có thể xuất hiện sau đó, vì người dùng tạo mới sản phẩm xong sẽ vẫn nhận đáp án không tồn tại cho tới khi TTL hết.",
+      "quiz": {
+        "q": "Log cho thấy 10.000 query trong một phút đều hỏi các productId ngẫu nhiên không tồn tại, cache hit rate tụt thấp, database quá tải. Biện pháp đầu tiên nên làm là gì?",
+        "answer": "Cache kết quả rỗng với TTL ngắn cho các key không tồn tại, kèm kiểm tra tính hợp lệ của id trước khi xuống database.",
+        "why": "Đây là penetration: key không tồn tại không có gì để cache theo cách thông thường, nên phải cache chính đáp án rỗng có hạn dùng, nếu không mỗi request lặp lại đều quét database."
+      }
     }
   ],
-  "13": [
+  "13":   [
     {
-      "what": "Transaction isolation là mức độ mà một transaction được cách ly khỏi các transaction chạy cùng lúc. Mức thấp cho phép đọc lại thấy dữ liệu khác nhau giữa hai lần đọc, mức cao giữ cho lần đọc sau giống lần đọc trước nhưng đổi lấy tốc độ chậm hơn. Bản chất của nó là một thang đánh đổi: càng giống chạy tuần tự thì càng an toàn nhưng càng chậm và càng dễ deadlock. Mức mặc định của từng hệ quản trị cần kiểm chứng theo tài liệu của hệ đó.",
-      "role": "Nó giải quyết việc hai transaction cùng chạm vào một tài nguyên làm kết quả sai hoặc báo cáo lệch. Nếu chọn mức quá thấp cho nghiệp vụ tiền bạc, báo cáo chạy hai lần có thể ra hai con số khác nhau trong cùng một transaction. Triệu chứng cụ thể là tổng tiền hoặc tồn kho lệch chỉ khi có nhiều request cùng lúc, còn test một mình thì luôn đúng.",
+      "what": "Transaction isolation là mức độ một transaction được cách ly khỏi các transaction chạy cùng lúc. Ba mức cần nhớ: Read Committed (chỉ đọc dữ liệu đã commit, nhưng đọc lại hai lần trong cùng transaction có thể thấy khác nhau), Repeatable Read (đọc lại trong cùng transaction thấy giống nhau), Serializable (chạy như thể các transaction xếp hàng tuần tự, an toàn nhất nhưng chậm nhất và dễ lỗi). Mức càng cao càng giống chạy tuần tự, đổi lấy tốc độ chậm hơn và dễ deadlock hơn.",
+      "role": "Chọn mức quá thấp cho nghiệp vụ tiền bạc thì báo cáo chạy hai lần trong cùng một transaction có thể ra hai con số khác nhau, vì transaction khác commit xen giữa hai lần đọc. Chọn mức quá cao cho mọi thứ thì hệ thống chậm và deadlock vô cớ. Điểm khó là lỗi chỉ lộ khi có nhiều request cùng lúc, còn test một mình thì luôn đúng.",
       "map": "Hệ thống đặt hàng > Tầng dữ liệu > Transaction > Mức isolation, kề bên transaction boundary ở service, cơ chế lock, bảng số dư và tồn kho, và query báo cáo",
       "connects": [
         {
-          "t": "Lost update",
+          "t": "Vì lost update là hậu quả cụ thể khi hai transaction cùng sửa một giá trị mà không được cách ly đủ, nên chọn mức isolation mà không hiểu lost update thì chỉ là chọn một cái tên, còn tiền và tồn kho vẫn lệch đúng lúc đông người dùng.",
           "day": 13
         },
         {
-          "t": "Optimistic lock bằng version",
+          "t": "Vì optimistic lock kiểm tra version ở phút cuối thay vì khóa dòng từ đầu, nên nó là biện pháp bù cho mức isolation thấp: isolation không ngăn được lost update thì version sẽ ngăn ở lúc ghi, và hai cơ chế này phải thiết kế cùng nhau.",
           "day": 13
         },
         {
-          "t": "Transaction boundary trong JPA và Hibernate",
+          "t": "Vì transaction boundary ở service quyết định một transaction bao phủ những bước nào, nên mức isolation chỉ có ý nghĩa trong đúng ranh giới đó: boundary sai thì isolation cao cũng không bảo vệ được các bước nằm ngoài transaction.",
           "day": 9
         },
         {
-          "t": "Tính đúng đắn của tiền và tồn kho trong toàn bộ hệ thống"
+          "t": "Vì tiền và tồn kho là nơi sai một đồng cũng phải đối soát, nên tính đúng đắn của tiền và tồn kho trong toàn bộ hệ thống phụ thuộc vào việc chọn isolation theo từng nghiệp vụ, chứ không phải chọn một mức chung cho mọi bảng."
         }
-      ]
+      ],
+      "shape": "compare",
+      "difficulty": 3,
+      "thresholds": "Không có một mức mặc định chung cho mọi database: mức mặc định của từng hệ quản trị phải kiểm chứng theo tài liệu của hệ đó trước khi thiết kế, và báo cáo tiền thì nên dùng ít nhất Repeatable Read thay vì Read Committed.",
+      "dontUse": "Không dùng Serializable cho mọi transaction với lý do cho chắc, vì nó biến hệ thống thành chạy tuần tự, dễ lỗi serialization và deadlock, và làm chậm cả những nghiệp vụ không cần độ an toàn đó.",
+      "quiz": {
+        "q": "Một báo cáo tổng tiền chạy hai lần SELECT SUM trong cùng một transaction, giữa hai lần đó có transaction khác commit thêm một đơn mới. Ở Read Committed, hai lần đọc cho kết quả ra sao? Ở Repeatable Read thì sao?",
+        "answer": "Read Committed: hai lần có thể khác nhau, lần sau cao hơn vì thấy đơn mới đã commit. Repeatable Read: hai lần giống nhau.",
+        "why": "Read Committed chỉ cấm đọc dữ liệu chưa commit, không cấm đọc lại thấy dữ liệu mới đã commit xen giữa; Repeatable Read giữ ảnh chụp nhất quán trong transaction nên đọc lại không đổi."
+      }
     },
     {
-      "what": "Lost update là hiện tượng hai request cùng đọc một giá trị, cùng sửa rồi cùng ghi đè lên nhau, làm mất một lần sửa. Ví dụ hai request cùng đọc số dư, cùng trừ một khoản, cùng ghi kết quả của riêng mình thì cuối cùng chỉ trừ một lần thay vì hai lần. Bản chất của nó là chuỗi đọc-sửa-ghi không nguyên tử, nên lần ghi sau xóa dấu vết của lần ghi trước.",
-      "role": "Nó giải quyết bài toán sai số chỉ lộ khi có đồng thời, và là lý do phải có lock hoặc ghi có điều kiện. Nếu không xử lý, tiền hoặc tồn kho sẽ lệch đúng bằng một lần trừ mỗi khi hai request trùng nhau. Triệu chứng cụ thể là bán quá tồn kho hoặc số dư cao hơn thực tế, mà log tính toán của từng request nhìn riêng đều đúng.",
+      "what": "Lost update là hiện tượng hai request cùng đọc một giá trị, cùng sửa rồi cùng ghi đè lên nhau, làm mất một lần sửa. Chuỗi đọc-sửa-ghi không nguyên tử: lần ghi sau xóa dấu vết của lần ghi trước, dù mỗi request nhìn riêng đều tính đúng.",
+      "role": "Ví dụ chạy được trong đầu: số dư 100, hai request cùng đọc 100, cùng trừ 30, cùng ghi 70. Kết quả đúng phải là 40, nhưng cuối cùng là 70, lệch đúng bằng một lần trừ. Với tồn kho thì hậu quả là bán quá số lượng thật, và log tính toán của từng request nhìn riêng đều đúng nên rất khó truy vết.",
       "map": "Hệ thống đặt hàng > Tầng dữ liệu > Transaction > Xung đột ghi đồng thời, kề bên bảng số dư ví, bảng tồn kho, cơ chế lock, và transaction isolation",
       "connects": [
         {
-          "t": "Transaction isolation",
+          "t": "Vì transaction isolation quyết định các transaction đồng thời nhìn thấy nhau ra sao, nên lost update là bài kiểm tra thực tế của mức isolation: mức nào không ngăn được chuỗi đọc-sửa-ghi chen ngang thì mức đó chưa đủ cho nghiệp vụ tiền.",
           "day": 13
         },
         {
-          "t": "Pessimistic lock và deadlock",
+          "t": "Vì pessimistic lock khóa dòng ngay từ lúc đọc nên nó chặn lost update bằng cách không cho request thứ hai đọc cùng lúc, và đó là lý do lock bi quan được chọn cho điểm nóng dù nó làm request phải chờ.",
           "day": 13
         },
         {
-          "t": "Race condition ở tầng ứng dụng",
+          "t": "Vì race condition ở tầng ứng dụng cũng là chuỗi đọc-sửa-ghi không nguyên tử nhưng xảy ra trong bộ nhớ thay vì trong database, nên lost update và race condition là cùng một lỗi ở hai tầng khác nhau, và sửa một tầng không tự sửa tầng còn lại.",
           "day": 15
         },
         {
-          "t": "Tính toàn vẹn của tiền và hàng hóa trong toàn bộ hệ thống"
+          "t": "Vì tiền bị trừ thiếu hay tồn kho bị bán quá đều thành tranh chấp và đối soát sau đó, nên tính toàn vẹn của tiền và hàng hóa trong toàn bộ hệ thống đứng hay sụp ở việc có chặn được lost update hay không."
         }
-      ]
+      ],
+      "shape": "trace",
+      "difficulty": 1,
+      "thresholds": "Ví dụ kiểm chứng: tồn kho 10, hai request cùng mua 8 cái, không có lock thì cả hai đều đọc 10 và đều cho qua, bán quá tồn kho. Cách chặn không cần lock dài là UPDATE có điều kiện dạng WHERE stock >= 8, chỉ trừ khi còn đủ hàng.",
+      "dontUse": "Không dùng cách đọc rồi cộng trừ ở code ứng dụng rồi ghi lại cho dữ liệu tiền và tồn kho, vì đó chính là chuỗi đọc-sửa-ghi tạo ra lost update; và không dùng synchronized trong một instance để chặn nó khi hệ thống có nhiều instance.",
+      "quiz": {
+        "q": "Số dư 100. Hai request cùng lúc, mỗi request trừ 30 bằng cách đọc số dư, trừ ở code, rồi ghi lại. Kết quả cuối cùng trong database là bao nhiêu, và đúng ra phải là bao nhiêu?",
+        "answer": "Cuối cùng là 70, đúng ra phải là 40.",
+        "why": "Cả hai cùng đọc 100 trước khi bên nào ghi, nên cả hai cùng tính ra 70 và ghi đè nhau, mất một lần trừ 30. Muốn đúng phải ghi có điều kiện hoặc khóa dòng."
+      }
     },
     {
-      "what": "Optimistic lock bằng version là cách ghi có điều kiện: mỗi lần đọc kèm theo số version, lúc ghi chỉ thành công khi version chưa đổi. Nếu version đã đổi nghĩa là có người khác sửa trước, lần ghi này thất bại và người dùng được báo xung đột để thử lại. Bản chất của nó là không khóa dòng trong lúc chờ, chỉ kiểm tra ở phút cuối.",
-      "role": "Nó giải quyết lost update mà không phải giữ lock lâu, nên hợp khi xung đột hiếm như sửa hồ sơ. Nếu dùng nó cho điểm nóng như vé hot hay tồn kho hot, xung đột xảy ra liên tục và người dùng thử lại hoài không xong. Triệu chứng cụ thể là tỉ lệ báo xung đột tăng cao đúng giờ cao điểm ở một mặt hàng hot.",
+      "what": "Optimistic lock bằng version là cách ghi có điều kiện: mỗi dòng có một cột version, lúc đọc kèm version hiện tại, lúc ghi thêm điều kiện WHERE version = version đã đọc, và chỉ ghi thành công khi version chưa đổi. Nếu version đã đổi nghĩa là có người khác sửa trước, lần ghi này thất bại và người dùng được báo xung đột để thử lại với dữ liệu mới.",
+      "role": "Cách này không khóa dòng trong lúc chờ, nên hợp khi xung đột hiếm như sửa hồ sơ hay sửa mô tả sản phẩm, nơi hai người cùng sửa một dòng là chuyện hiếm. Dùng nó cho điểm nóng như vé hot hay tồn kho hot thì xung đột xảy ra liên tục, người dùng thử lại hoài không xong và tỉ lệ báo xung đột tăng cao đúng giờ cao điểm.",
       "map": "Hệ thống đặt hàng > Tầng dữ liệu > Transaction > Lock lạc quan, kề bên cột version của bảng, transaction isolation, cơ chế retry có kiểm soát, và thông báo xung đột cho người dùng",
       "connects": [
         {
-          "t": "Lost update",
+          "t": "Vì lost update sinh ra từ lần ghi sau xóa dấu vết của lần ghi trước, nên optimistic lock chặn đúng điểm đó: ghi có điều kiện version khiến lần ghi sau thất bại thay vì âm thầm ghi đè, và thất bại rõ ràng thì tốt hơn thành công sai.",
           "day": 13
         },
         {
-          "t": "Transaction isolation",
+          "t": "Vì transaction isolation chỉ quyết định các transaction nhìn thấy nhau ra sao chứ không tự chặn ghi đè, nên optimistic lock là lớp bảo vệ thứ hai cho những nghiệp vụ mà isolation thấp chưa đủ, và hai cơ chế này bổ sung chứ không thay thế nhau.",
           "day": 13
         },
         {
-          "t": "Retry chỉ an toàn khi operation idempotent",
+          "t": "Vì retry chỉ an toàn khi thao tác có thể lặp lại mà không nhân đôi hậu quả, nên khi optimistic lock báo xung đột và người dùng thử lại, lần thử lại phải đọc lại version mới rồi mới ghi, chứ không gửi lại đúng câu ghi cũ vì câu cũ sẽ lại thất bại hoặc tệ hơn là ghi sai.",
           "day": 18
         },
         {
-          "t": "Trải nghiệm người dùng khi sửa cùng một dữ liệu trong toàn bộ sản phẩm"
+          "t": "Vì người dùng phải hiểu vì sao lần sửa của mình bị từ chối và phải làm gì tiếp theo, nên trải nghiệm khi sửa cùng một dữ liệu trong toàn bộ sản phẩm phụ thuộc vào thông báo xung đột rõ ràng, không phải một lỗi chung chung."
         }
-      ]
+      ],
+      "shape": "decision",
+      "difficulty": 2,
+      "thresholds": "Dùng optimistic lock khi tỉ lệ xung đột thấp, ví dụ dưới vài phần trăm số lần ghi; khi xung đột trở nên thường xuyên ở một mặt hàng hot thì đó là tín hiệu phải chuyển sang pessimistic lock hoặc ghi có điều kiện theo số lượng.",
+      "dontUse": "Không dùng optimistic lock cho điểm nóng xung đột thường xuyên như trừ tồn kho flash sale hay giữ ghế hot, và không retry vô hạn khi xung đột mà không giới hạn số lần và không báo cho người dùng.",
+      "quiz": {
+        "q": "Hồ sơ user có version = 3. Hai người cùng mở hồ sơ, cùng sửa, người thứ nhất lưu thành công, version thành 4. Người thứ hai bấm lưu với version 3. Điều gì xảy ra và vì sao?",
+        "answer": "Lần ghi thứ hai thất bại vì điều kiện WHERE version = 3 không còn khớp, người thứ hai được báo xung đột và phải tải lại rồi sửa lại.",
+        "why": "Ghi có điều kiện version chỉ thành công khi version chưa đổi; version đã thành 4 chứng tỏ dữ liệu đã bị sửa sau lúc người thứ hai đọc, nên ghi đè sẽ gây lost update."
+      }
     },
     {
-      "what": "Pessimistic lock là cách khóa dòng ngay từ lúc đọc, transaction khác muốn chạm vào dòng đó phải chờ. Deadlock xảy ra khi hai transaction khóa ngược thứ tự và chờ nhau mãi, lúc đó database sẽ giết một transaction để phá vòng chờ. Bản chất của nó là trả giá bằng thời gian chờ để đổi lấy chắc chắn không ai sửa chen ngang.",
-      "role": "Nó giải quyết lost update khi xung đột thường xuyên, như trừ tiền ví hay giữ ghế. Nếu giữ lock quá lâu hoặc khóa không theo một thứ tự cố định, hàng đợi kéo dài và deadlock lặp lại. Triệu chứng cụ thể là request chậm dần thành hàng đợi dài, hoặc transaction bị database hủy với lỗi deadlock đúng lúc nhiều người cùng mua một mặt hàng.",
+      "what": "Pessimistic lock là cách khóa dòng ngay từ lúc đọc, bằng câu lệnh kiểu SELECT ... FOR UPDATE, để transaction khác muốn chạm vào dòng đó phải chờ. Deadlock là trạng thái hai transaction khóa ngược thứ tự và chờ nhau thành vòng tròn: transaction 1 giữ khóa A chờ khóa B, transaction 2 giữ khóa B chờ khóa A, không bên nào tiến triển được, và database sẽ giết một transaction để phá vòng chờ, bên còn lại mới chạy tiếp.",
+      "role": "Khóa bi quan hợp khi xung đột thường xuyên như trừ tiền ví hay giữ ghế, vì nó chặn chen ngang ngay từ đầu. Nhưng giữ lock quá lâu, ví dụ giữ suốt lúc gọi API bên ngoài, thì hàng đợi kéo dài; còn khóa không theo một thứ tự cố định thì deadlock lặp lại đúng lúc nhiều người cùng mua một mặt hàng.",
       "map": "Hệ thống đặt hàng > Tầng dữ liệu > Transaction > Lock bi quan, kề bên câu lệnh khóa dòng khi đọc, bảng tồn kho và số dư, thứ tự khóa thống nhất, và cơ chế retry có giới hạn",
       "connects": [
         {
-          "t": "Optimistic lock bằng version",
+          "t": "Vì optimistic lock chỉ kiểm tra ở phút cuối và thất bại khi xung đột, nên khi xung đột là chuyện thường xuyên thì pessimistic lock rẻ hơn: trả giá bằng thời gian chờ để đổi lấy chắc chắn không phải thử lại hoài, và chọn sai hướng này là chọn sai đánh đổi.",
           "day": 13
         },
         {
-          "t": "Lost update",
+          "t": "Vì lost update là hậu quả của việc không khóa mà vẫn đọc-sửa-ghi, nên pessimistic lock chặn đúng gốc của nó bằng cách biến chuỗi đọc-sửa-ghi thành một đoạn không ai chen ngang được, thay vì để hai request cùng đọc rồi cùng ghi.",
           "day": 13
         },
         {
-          "t": "Saga khi lock một database không đủ cho nhiều service",
+          "t": "Vì saga điều phối nhiều bước qua nhiều service mà không có một database chung để khóa, nên khi lock một database không còn đủ, saga với hành động bù mới là cách thay thế: khóa chỉ bảo vệ được trong một database, còn liên service thì phải bù.",
           "day": 17
         },
         {
-          "t": "Tính đúng đắn của giao dịch trong toàn bộ hệ thống"
+          "t": "Vì một giao dịch sai do chen ngang hay một giao dịch kẹt do deadlock đều làm người dùng mất tiền hoặc mất chỗ, nên tính đúng đắn của giao dịch trong toàn bộ hệ thống phụ thuộc vào việc giữ lock ngắn, khóa theo một thứ tự, và retry có giới hạn khi bị giết vì deadlock."
         }
-      ]
+      ],
+      "shape": "trace",
+      "difficulty": 2,
+      "thresholds": "Giữ lock càng ngắn càng tốt: chỉ khóa trong lúc đọc và ghi trong cùng transaction, tuyệt đối không giữ lock trong lúc gọi API bên ngoài hay chờ người dùng. Khi bị database giết vì deadlock, retry có giới hạn, ví dụ tối đa 2-3 lần, và mỗi lần retry phải bắt đầu lại transaction từ đầu.",
+      "dontUse": "Không dùng pessimistic lock cho dữ liệu xung đột hiếm như sửa hồ sơ, vì chờ khóa là chi phí vô ích; và không khóa các dòng theo thứ tự khác nhau ở các luồng khác nhau, vì đó là cách tạo deadlock lặp lại.",
+      "quiz": {
+        "q": "Transaction 1 khóa dòng A rồi muốn khóa dòng B. Transaction 2 khóa dòng B rồi muốn khóa dòng A. Cả hai đều đang chờ. Đây là hiện tượng gì, database làm gì, và code nên làm gì tiếp theo?",
+        "answer": "Đây là deadlock. Database sẽ giết một transaction để phá vòng chờ. Code của transaction bị giết phải retry có giới hạn từ đầu transaction, không retry vô hạn.",
+        "why": "Hai transaction chờ nhau thành vòng tròn nên không bên nào tự tiến triển được; chỉ có bên ngoài phá vòng bằng cách hủy một bên, và retry phải bắt đầu lại vì transaction bị hủy đã rollback."
+      }
     }
   ],
-  "14": [
+  "14":   [
     {
-      "what": "Chọn SQL, MongoDB hay kết hợp là quyết định gán mỗi phần dữ liệu cho loại database phù hợp với nó, thay vì ép một loại cho tất cả. SQL hợp với dữ liệu cần transaction mạnh, ràng buộc và báo cáo join, MongoDB hợp với document linh hoạt đọc theo cụm. Bản chất của nó là thừa nhận không có loại database nào tốt nhất cho mọi hình dạng dữ liệu.",
-      "role": "Nó giải quyết việc thiết kế bị kẹt: hoặc transaction khó vì tách nhỏ quá, hoặc join khó vì document không hợp cho báo cáo. Nếu chọn một loại cho tất cả, có phần sẽ phải bù bằng code phức tạp và dễ sai. Triệu chứng cụ thể là báo cáo phải kéo hết dữ liệu về code để tính, hoặc luồng nhiều bước không có transaction tử tế để bảo vệ.",
+      "what": "Chọn SQL, MongoDB hay kết hợp là quyết định gán mỗi phần dữ liệu cho loại database phù hợp với hình dạng và nhu cầu của nó, thay vì ép một loại cho tất cả. SQL hợp với dữ liệu cần transaction mạnh, ràng buộc và báo cáo join (kết nối nhiều bảng), như đơn hàng và thanh toán. MongoDB hợp với document linh hoạt đọc theo cụm, như giỏ hàng và catalog sản phẩm. Redis chỉ hợp với dữ liệu tạm, nhanh và mất được, như session, không phải database chính cho đơn hàng.",
+      "role": "Ép một loại cho tất cả thì có phần phải bù bằng code phức tạp và dễ sai: báo cáo phải kéo hết dữ liệu về code để tính vì document không join tốt, hoặc luồng nhiều bước không có transaction tử tế vì dữ liệu bị tách nhỏ quá. Dấu hiệu là code ngày càng phình chỉ để bù cho lựa chọn database ban đầu.",
       "map": "Hệ thống đặt hàng > Tầng dữ liệu > Thiết kế tổng thể > Lựa chọn database, kề bên bảng đơn hàng và thanh toán ở SQL, document giỏ hàng và catalog ở MongoDB, Redis cho session, và tầng cache",
       "connects": [
         {
-          "t": "Transaction và cơ chế bù",
+          "t": "Vì mỗi phần dữ liệu chọn database khác nhau thì luồng ghi nhiều bước sẽ đi qua nhiều database, nên quyết định chọn database buộc phải đi cùng quyết định transaction hay bù: chọn xong mà không trả lời được bước giữa lỗi thì sao là thiết kế chưa xong.",
           "day": 14
         },
         {
-          "t": "So sánh với thiết kế tuần trước",
+          "t": "Vì kiến thức mới về lock, cache và migration có thể làm thay đổi lựa chọn ban đầu, nên việc rà lại thiết kế tuần trước chính là lúc kiểm tra xem lựa chọn SQL hay MongoDB nào cần đổi sau khi đã học thêm, chứ không phải giữ nguyên vì đã chọn rồi.",
           "day": 14
         },
         {
-          "t": "Model embedding hay referencing của MongoDB",
+          "t": "Vì embedding (nhúng dữ liệu con vào document cha) và referencing (tách dữ liệu con ra collection riêng) là cùng một lựa chọn ở dạng document, nên phần nào đã chọn MongoDB thì vẫn còn phải chọn tiếp nhúng hay tách, và chọn sai ở đây cũng gây hậu quả giống chọn sai database.",
           "day": 10
         },
         {
-          "t": "Kiến trúc dữ liệu của toàn bộ hệ thống"
+          "t": "Vì mỗi loại database đều có điểm mạnh riêng và không loại nào tốt nhất cho mọi hình dạng dữ liệu, nên kiến trúc dữ liệu của toàn bộ hệ thống chỉ vững khi mỗi phần được gán đúng loại, thay vì một loại gánh hết mọi phần."
         }
-      ]
+      ],
+      "shape": "decision",
+      "difficulty": 2,
+      "thresholds": "Quy tắc chọn nhanh: cần ACID (tính nguyên tử, nhất quán, cô lập, bền vững) và join báo cáo thì chọn SQL; document linh hoạt, đọc theo cụm và thay đổi hình dạng thường xuyên thì chọn MongoDB; dữ liệu tạm, đọc nhanh và mất được thì chọn Redis. Một document MongoDB có giới hạn 16MB, nên mảng tăng vô hạn không được nhúng vào document.",
+      "dontUse": "Không dùng Redis làm nơi duy nhất lưu đơn hàng hay thanh toán, vì dữ liệu tạm mất được không thể làm nguồn sự thật cho tiền; và không dùng MongoDB cho báo cáo cần join nhiều bảng phức tạp với lý do cho đồng nhất.",
+      "quiz": {
+        "q": "Hệ thống có ba phần: đơn hàng cần transaction và báo cáo doanh thu theo nhiều bảng, catalog sản phẩm thay đổi hình dạng thường xuyên và đọc theo cụm, session đăng nhập cần đọc nhanh và mất được. Gán database cho từng phần và nêu lý do.",
+        "answer": "Đơn hàng: SQL vì cần transaction và join báo cáo. Catalog: MongoDB vì document linh hoạt và đọc theo cụm. Session: Redis vì tạm, nhanh, mất được.",
+        "why": "Mỗi phần được gán theo nhu cầu thật của nó: ép cả ba vào một loại sẽ làm một phần phải bù bằng code phức tạp, đúng lỗi mà lựa chọn kết hợp sinh ra để tránh."
+      }
     },
     {
-      "what": "Transaction và cơ chế bù là hai cách đảm bảo luồng ghi nhiều bước không để lại trạng thái nửa vời. Transaction dùng được khi các bước cùng một database, còn cơ chế bù dùng khi các bước ở nhiều service khác nhau và không có transaction chung. Bản chất của nó là mọi luồng nhiều bước đều phải có đáp án cho câu hỏi bước giữa lỗi thì các bước trước ra sao.",
-      "role": "Nó giải quyết trạng thái kẹt như thanh toán thành công nhưng trừ kho thất bại. Nếu không có transaction hoặc bù, đơn sẽ ở trạng thái vừa trả tiền vừa không giao được mà không ai biết phải hoàn tiền cho ai. Triệu chứng cụ thể là đơn ở trạng thái đã thanh toán nhưng kho không trừ, hoặc kho trừ rồi mà không có đơn.",
+      "what": "Transaction và cơ chế bù là hai cách đảm bảo luồng ghi nhiều bước không để lại trạng thái nửa vời. Transaction dùng được khi các bước cùng một database: lỗi ở bước cuối thì rollback (hủy) tất cả các bước trước. Cơ chế bù dùng khi các bước ở nhiều service khác nhau và không có transaction chung: bước sau lỗi thì chạy hành động bù cho các bước trước, ví dụ hoàn tiền, hủy đơn, cộng lại kho.",
+      "role": "Không có transaction hay bù thì đơn kẹt ở trạng thái vừa trả tiền vừa không giao được mà không ai biết phải hoàn tiền cho ai. Ví dụ chạy được trong đầu: thanh toán thành công nhưng trừ kho thất bại, nếu không có bù thì đơn ở trạng thái đã thanh toán mà kho không trừ, và khách chờ giao hàng không bao giờ tới.",
       "map": "Hệ thống đặt hàng > Tầng dữ liệu > Luồng nhiều bước > Transaction và bù, kề bên service thanh toán, service kho, bảng đơn hàng, và trạng thái trung gian của đơn",
       "connects": [
         {
-          "t": "Chọn SQL, MongoDB hay kết hợp",
+          "t": "Vì lựa chọn database quyết định các bước có cùng một database hay không, nên chọn SQL, MongoDB hay kết hợp chính là tiền đề của việc chọn transaction hay bù: cùng database thì dùng transaction, khác service thì bắt buộc phải bù.",
           "day": 14
         },
         {
-          "t": "So sánh với thiết kế tuần trước",
+          "t": "Vì rà lại thiết kế tuần trước là lúc kiểm tra xem luồng nhiều bước nào còn thiếu đáp án cho bước giữa lỗi, nên bất kỳ luồng nào ở ngày 14 mà không ghi rõ transaction hay bù đều là chỗ thiết kế cũ chưa được sửa, không phải chỗ mới.",
           "day": 14
         },
         {
-          "t": "Saga và hành động bù ở hệ phân tán",
+          "t": "Vì saga là tên gọi của cơ chế bù khi luồng đi qua nhiều service, nên transaction và bù ở checkpoint này chính là nền tảng để hiểu saga: saga không phải khái niệm mới tách rời mà là cách tổ chức các hành động bù thành một luồng có thứ tự.",
           "day": 17
         },
         {
-          "t": "Tính nhất quán của đơn hàng trong toàn bộ hệ thống"
+          "t": "Vì đơn hàng là nơi người dùng nhìn thấy hậu quả trực tiếp nhất, nên tính nhất quán của đơn hàng trong toàn bộ hệ thống phụ thuộc vào việc mọi luồng nhiều bước đều có trạng thái trung gian rõ ràng và người chịu trách nhiệm xử lý trạng thái đó."
         }
-      ]
+      ],
+      "shape": "decision",
+      "difficulty": 2,
+      "thresholds": "Mọi luồng ghi từ hai bước trở lên đều phải ghi rõ: dùng transaction nếu cùng database, dùng bù nếu khác service, và ghi rõ trạng thái trung gian của đơn trong lúc chờ bù, ví dụ PENDING_COMPENSATION, để không ai nhầm đơn đang chờ bù với đơn đã hoàn tất.",
+      "dontUse": "Không dùng cách gọi API bên ngoài trong cùng transaction database rồi hy vọng cả hai cùng thành công, vì transaction database không rollback được cuộc gọi API đã gửi đi; và không thiết kế bước bù cho bước không bù được mà không ghi rõ ai xử lý tay và trong bao lâu.",
+      "quiz": {
+        "q": "Luồng đặt hàng: trừ tiền ví thành công, trừ kho thất bại, hai bước ở hai service khác nhau. Đơn nên ở trạng thái gì và bước tiếp theo là gì?",
+        "answer": "Đơn không được ở trạng thái đã thanh toán hoàn tất; phải chuyển sang trạng thái chờ bù, chạy hành động bù là hoàn tiền, rồi chuyển đơn về đã hủy và thông báo cho người dùng.",
+        "why": "Khác service thì không có transaction chung để rollback, nên chỉ có bù mới đưa hệ thống về trạng thái nhất quán; để đơn ở đã thanh toán mà kho không trừ là trạng thái nửa vời không ai sửa được."
+      }
     },
     {
-      "what": "So sánh với thiết kế tuần trước là bước rà lại thiết kế ngày 11 sau khi đã học thêm cache, lock và migration, rồi ghi rõ chỗ nào đã sửa và vì sao. Nó không phải chép lại thiết kế cũ cho đẹp hơn mà là kiểm tra xem kiến thức mới có làm thay đổi quyết định cũ không. Bản chất của nó là vòng lặp thiết kế: học thêm một ràng buộc thì thiết kế phải cập nhật theo.",
-      "role": "Nó giải quyết việc thiết kế đứng yên trong khi hiểu biết đã thay đổi, khiến lỗi đã học vẫn nằm nguyên trong bản vẽ. Nếu bỏ qua bước này, checkpoint chỉ là bản sao của thiết kế cũ và các quyết định sai về lock hay cache không được sửa. Triệu chứng cụ thể là thiết kế ngày 14 giống hệt ngày 11 dù đã học thêm cả tuần về cache và lock.",
+      "what": "So sánh với thiết kế tuần trước là bước rà lại thiết kế ngày 11 sau khi đã học thêm cache, lock và migration, rồi ghi rõ chỗ nào đã sửa và vì sao sửa. Đây không phải chép lại thiết kế cũ cho đẹp hơn mà là kiểm tra xem kiến thức mới có làm thay đổi quyết định cũ không, và quyết định cũ nào đã sai dưới ánh sáng của ràng buộc mới.",
+      "role": "Bỏ qua bước này thì checkpoint chỉ là bản sao của thiết kế cũ, và các quyết định sai về lock hay cache vẫn nằm nguyên trong bản vẽ dù người thiết kế đã học cách sửa chúng. Dấu hiệu dễ nhận nhất: thiết kế ngày 14 giống hệt ngày 11 dù ở giữa đã học thêm cả tuần về cache và lock.",
       "map": "Hệ thống đặt hàng > Tầng thiết kế > Checkpoint tuần dữ liệu > Rà soát thiết kế, kề bên persistence contract ngày 11, thiết kế cache ngày 12, quyết định lock ngày 13, và thiết kế dữ liệu ngày 14",
       "connects": [
         {
-          "t": "Chọn SQL, MongoDB hay kết hợp",
+          "t": "Vì lựa chọn database là quyết định đầu tiên của thiết kế, nên rà soát phải bắt đầu từ đó: sau khi học lock và cache, có phần dữ liệu nào cần đổi database hay đổi cách nhúng và tách không, và nếu không đổi thì lý do giữ nguyên là gì.",
           "day": 14
         },
         {
-          "t": "Transaction và cơ chế bù",
+          "t": "Vì transaction và bù là đáp án cho bước giữa lỗi, nên rà soát phải kiểm tra từng luồng nhiều bước trong thiết kế cũ xem đã có transaction hay bù chưa, và luồng nào ở ngày 11 còn thiếu thì ngày 14 phải bổ sung.",
           "day": 14
         },
         {
-          "t": "Persistence contract đã viết ở tuần dữ liệu",
+          "t": "Vì persistence contract ngày 11 chỉ ghi dữ liệu sống ở đâu, nên rà soát ngày 14 phải đối chiếu từng contract đó với lock ngày 13 và cache ngày 12: contract nào chưa ghi lock cho trừ kho hay TTL cho giá thì vẫn là contract chưa hoàn chỉnh.",
           "day": 11
         },
         {
-          "t": "Chất lượng thiết kế của toàn bộ dự án qua các tuần"
+          "t": "Vì chất lượng thiết kế của toàn bộ dự án không đo bằng độ đẹp của bản vẽ mà đo bằng số quyết định sai đã được sửa sau khi học thêm, nên một checkpoint không ghi rõ chỗ nào đã sửa là một checkpoint chưa làm đúng vai trò của nó."
         }
-      ]
+      ],
+      "shape": "decision",
+      "difficulty": 1,
+      "dontUse": "Không dùng bước rà soát để chép lại thiết kế cũ bằng từ ngữ mới, và không dùng nó để sửa những chỗ không liên quan trong khi bỏ qua đúng ba chỗ bắt buộc phải kiểm tra: lock cho trừ kho, cache cho giá và tồn kho, migration cho thay đổi schema.",
+      "quiz": {
+        "q": "Thiết kế ngày 14 của một nhóm giống hệt thiết kế ngày 11, chỉ khác cách trình bày. Nhóm đó đã bỏ qua điều gì, và cần bổ sung ít nhất ba chỗ nào?",
+        "answer": "Bỏ qua bước rà soát sau khi học thêm. Cần bổ sung: lock cho trừ kho và tiền, cache với TTL và invalidate cho giá và tồn kho, và migration chia bước cho thay đổi schema.",
+        "why": "Mỗi ngày 11, 12, 13 đều thêm một ràng buộc mới vào thiết kế; thiết kế không đổi sau ba ràng buộc mới chứng tỏ chưa đối chiếu thiết kế cũ với kiến thức mới, đúng dấu hiệu của checkpoint chép lại."
+      }
     }
   ],
-  "15": [
+  "15":   [
     {
-      "what": "Race condition là lỗi xảy ra khi kết quả phụ thuộc vào thứ tự chạy của các thread mà thứ tự đó không được đảm bảo. Deadlock là trạng thái các thread giữ lock và chờ lock của nhau thành vòng tròn nên không ai tiến triển được. Bản chất chung của hai lỗi này là chúng chỉ lộ khi có đồng thời, nên test chạy một lần thường vẫn pass.",
-      "role": "Chúng giải quyết bài toán lỗi không tái hiện đều: code nhìn đúng nhưng sai khi đông người dùng. Nếu không nhận ra, hệ thống sẽ đếm lệch, mất cập nhật hoặc kẹt cứng mà CPU vẫn thấp. Triệu chứng cụ thể là kết quả đếm thay đổi theo mỗi lần chạy, hoặc ứng dụng kẹt không tiến triển dù không có request nào báo lỗi rõ ràng.",
+      "what": "Race condition là lỗi mà kết quả phụ thuộc vào thứ tự chạy của các thread, trong khi thứ tự đó không được đảm bảo. Deadlock là trạng thái các thread giữ lock và chờ lock của nhau thành vòng tròn nên không ai tiến triển được. Điểm chung nguy hiểm nhất: cả hai chỉ lộ khi có đồng thời, nên test chạy một lần thường vẫn pass và code nhìn qua vẫn đúng.",
+      "role": "Ví dụ chạy được trong đầu: hai thread cùng tăng một biến đếm từ 5, mỗi thread đọc 5, cộng 1, ghi 6, kết quả cuối là 6 thay vì 7, mất một lần tăng. Còn deadlock thì ứng dụng kẹt không tiến triển dù CPU vẫn thấp, vì các thread không phải đang tính toán mà đang chờ nhau, và không có request nào báo lỗi rõ ràng.",
       "map": "Hệ thống đặt hàng > Tầng ứng dụng > Đồng thời > Race và deadlock, kề bên biến đếm dùng chung, cache dùng chung, thứ tự khóa, và thread pool",
       "connects": [
         {
-          "t": "Thread-safe collection",
+          "t": "Vì thread-safe collection đưa tính nguyên tử vào trong cấu trúc dữ liệu, nên nó là đáp án trực tiếp cho race condition ở mức biến đếm và cache dùng chung: thay vì trông chờ mọi nơi khóa đúng, cấu trúc tự bảo vệ mình.",
           "day": 15
         },
         {
-          "t": "Thread pool",
+          "t": "Vì thread pool giới hạn số thread và hàng đợi, nên nó liên quan tới race và deadlock ở chỗ pool cạn hay deadlock đều làm request kẹt, nhưng pool chỉ giới hạn tài nguyên chứ không sửa được thứ tự chạy sai, và nhầm hai việc này sẽ chữa sai bệnh.",
           "day": 15
         },
         {
-          "t": "Lost update ở tầng database",
+          "t": "Vì lost update ở tầng database cũng là chuỗi đọc-sửa-ghi không nguyên tử, nên race condition ở tầng ứng dụng và lost update là cùng một lỗi ở hai tầng: sửa database bằng lock mà không sửa biến dùng chung trong bộ nhớ thì lỗi vẫn còn ở tầng ứng dụng.",
           "day": 13
         },
         {
-          "t": "Độ tin cậy của toàn bộ hệ thống lúc đông người dùng"
+          "t": "Vì lỗi chỉ lộ lúc đông người dùng và không tái hiện đều, nên độ tin cậy của toàn bộ hệ thống lúc đông người dùng phụ thuộc vào việc phát hiện race và deadlock bằng test nhiều thread và review, chứ không phải bằng test một lần pass."
         }
-      ]
+      ],
+      "shape": "incident",
+      "difficulty": 2,
+      "thresholds": "Test chứng minh race: 100 thread, mỗi thread tăng biến đếm 1.000 lần, kết quả kỳ vọng là 100.000; nếu kết quả thấp hơn và thay đổi theo mỗi lần chạy thì đó là race, không phải lỗi tính toán. Deadlock thì dấu hiệu là ứng dụng kẹt mà CPU thấp, khác với chậm do CPU cao.",
+      "dontUse": "Không dùng test chạy một lần pass để kết luận code dùng chung là an toàn, và không dùng cách tăng thread hay tăng bộ nhớ để chữa race, vì race là lỗi thứ tự, không phải lỗi thiếu tài nguyên.",
+      "quiz": {
+        "q": "Đoạn code: class Counter { int n = 0; void inc() { n++; } }. Chạy 100 thread, mỗi thread gọi inc() 1.000 lần. Kết quả kỳ vọng là 100.000 nhưng thực tế thường thấp hơn và mỗi lần chạy khác nhau. Đây là lỗi gì và vì sao?",
+        "answer": "Race condition: n++ là ba bước đọc, cộng, ghi không nguyên tử, nên hai thread cùng đọc một giá trị rồi cùng ghi sẽ mất một lần tăng.",
+        "why": "Kết quả thấp hơn và không ổn định theo mỗi lần chạy là dấu hiệu của thứ tự chạy không đảm bảo, chứ không phải tính toán sai, vì tính toán sai sẽ sai ổn định."
+      }
     },
     {
-      "what": "Thread-safe collection là các cấu trúc dữ liệu được thiết kế để nhiều thread dùng chung mà không hỏng trạng thái nội bộ. Ví dụ bộ đếm dùng phép tăng nguyên tử thay vì đọc rồi cộng rồi ghi, và cache dùng chung dùng map dành cho đồng thời thay vì map thường. Bản chất của chúng là đưa tính nguyên tử vào trong cấu trúc, thay vì trông chờ code bên ngoài khóa đúng mọi chỗ.",
-      "role": "Chúng giải quyết việc map thường bị hỏng cấu trúc hoặc mất entry khi nhiều thread ghi cùng lúc. Nếu dùng sai cấu trúc, lỗi chỉ lộ lúc đông người dùng và rất khó tái hiện ở máy dev. Triệu chứng cụ thể là cache mất entry không rõ lý do, hoặc bộ đếm lệch đúng bằng số request đồng thời.",
+      "what": "Thread-safe collection là các cấu trúc dữ liệu được thiết kế để nhiều thread dùng chung mà không hỏng trạng thái nội bộ. Ví dụ: bộ đếm dùng AtomicInteger với phép tăng nguyên tử (một phép không thể bị chen ngang), thay vì đọc rồi cộng rồi ghi; cache dùng chung dùng ConcurrentHashMap (map dành cho đồng thời) thay vì HashMap thường; còn CopyOnWriteArrayList chỉ hợp khi đọc nhiều và ghi ít.",
+      "role": "Dùng HashMap thường cho nhiều thread thì cấu trúc nội bộ có thể hỏng, mất entry không rõ lý do, hoặc rơi vào vòng lặp vô hạn lúc đông người dùng, trong khi test một thread không thấy gì. Điểm mấu chốt: tính nguyên tử được đưa vào trong cấu trúc, thay vì trông chờ code bên ngoài khóa đúng ở mọi chỗ.",
       "map": "Hệ thống đặt hàng > Tầng ứng dụng > Đồng thời > Cấu trúc dữ liệu an toàn, kề bên biến đếm dùng chung, cache dùng chung, thread pool, và cơ chế khóa ngắn",
       "connects": [
         {
-          "t": "Race condition và deadlock",
+          "t": "Vì race condition là lỗi thứ tự chạy không đảm bảo, nên thread-safe collection là đáp án ở mức cấu trúc: nó làm cho từng phép tăng hay từng phép ghi trở nên nguyên tử, thay vì để hai thread chen ngang vào giữa phép đọc-sửa-ghi.",
           "day": 15
         },
         {
-          "t": "Bất đồng bộ không có nghĩa là an toàn",
+          "t": "Vì bất đồng bộ chỉ thay đổi thứ tự chạy chứ không tự sửa shared state (trạng thái dùng chung), nên dùng CompletableFuture hay Reactor mà vẫn ghi vào HashMap thường thì race vẫn còn nguyên, và thread-safe collection vẫn là thứ phải có bất kể chạy đồng bộ hay bất đồng bộ.",
           "day": 15
         },
         {
-          "t": "Virtual thread và shared state không an toàn",
+          "t": "Vì virtual thread không sửa được code giữ lock lâu hay dùng shared state không an toàn, nên đổi sang virtual thread mà vẫn dùng HashMap dùng chung thì chỉ làm lỗi xảy ra với nhiều thread hơn, chứ không làm code an toàn hơn.",
           "day": 1
         },
         {
-          "t": "Tính đúng đắn của trạng thái dùng chung trong toàn bộ ứng dụng"
+          "t": "Vì cache và biến đếm dùng chung nằm khắp ứng dụng, nên tính đúng đắn của trạng thái dùng chung trong toàn bộ ứng dụng phụ thuộc vào việc chọn đúng cấu trúc ở từng chỗ, chứ không phải chỉ khóa đúng ở một chỗ."
         }
-      ]
+      ],
+      "shape": "compare",
+      "difficulty": 2,
+      "thresholds": "Chọn theo mẫu truy cập: đếm thì AtomicInteger hoặc LongAdder khi tranh chấp rất cao; cache ghi đọc song song thì ConcurrentHashMap với computeIfAbsent để tránh hai thread cùng tạo một entry; danh sách đọc nhiều ghi ít thì CopyOnWriteArrayList, còn ghi nhiều thì không dùng nó vì mỗi lần ghi đều sao chép cả danh sách.",
+      "dontUse": "Không dùng HashMap hay ArrayList thường cho trạng thái dùng chung giữa các thread với lý do chỉ có vài thread, và không dùng CopyOnWriteArrayList cho danh sách ghi nhiều vì chi phí sao chép sẽ nuốt hết lợi ích.",
+      "quiz": {
+        "q": "Hai đoạn code cache: A dùng HashMap với synchronized bao quanh đoạn kiểm tra rồi tạo entry; B dùng ConcurrentHashMap.computeIfAbsent. Đoạn A vẫn có thể tạo trùng entry không, và vì sao B an toàn hơn?",
+        "answer": "A vẫn có thể sai nếu có chỗ nào quên khóa hoặc khóa không cùng một lock; B an toàn hơn vì phép kiểm tra và tạo được thực hiện nguyên tử bên trong cấu trúc, không phụ thuộc vào việc mọi nơi khóa đúng.",
+        "why": "Đưa tính nguyên tử vào trong cấu trúc thì chỉ cần dùng đúng một phép, còn khóa tay thì mọi đường code chạm vào map đều phải khóa đúng cùng một lock, chỉ cần sót một chỗ là race quay lại."
+      }
     },
     {
-      "what": "Thread pool là một tập hợp thread có giới hạn, kèm hàng đợi có giới hạn và chính sách từ chối rõ ràng khi quá tải. Thay vì tạo thread mới cho mỗi request, hệ thống tái sử dụng thread trong pool và từ chối có kiểm soát khi pool và hàng đợi đều đầy. Bản chất của nó là đặt trần cho tài nguyên, để hệ thống chậm lại một cách có kiểm soát thay vì chết vì hết bộ nhớ.",
-      "role": "Nó giải quyết việc tạo thread không giới hạn làm ứng dụng hết bộ nhớ trước khi hết CPU. Nếu không giới hạn pool và hàng đợi, traffic tăng đột biến sẽ làm ứng dụng chết thay vì chỉ trả lỗi cho một phần request. Triệu chứng cụ thể là ứng dụng hết bộ nhớ khi traffic tăng dù CPU còn rảnh, hoặc request xếp hàng vô hạn tới khi timeout hàng loạt.",
+      "what": "Thread pool là một tập hợp thread có giới hạn, kèm hàng đợi có giới hạn và chính sách từ chối rõ ràng khi quá tải. Thay vì tạo thread mới cho mỗi request, hệ thống tái sử dụng thread trong pool, và khi pool và hàng đợi đều đầy thì từ chối có kiểm soát, ví dụ trả 503 kèm Retry-After, thay vì xếp hàng vô hạn.",
+      "role": "Tạo thread không giới hạn thì ứng dụng chết vì hết bộ nhớ trước khi chết vì hết CPU, vì mỗi thread tốn stack và tài nguyên hệ điều hành. Còn hàng đợi không giới hạn thì request xếp hàng vô hạn tới khi timeout hàng loạt, người dùng chờ mãi rồi nhận lỗi cùng lúc. Pool có giới hạn biến chết không kiểm soát thành chậm lại có kiểm soát.",
       "map": "Hệ thống đặt hàng > Tầng ứng dụng > Đồng thời > Thread pool, kề bên hàng đợi request, timeout của client, chính sách từ chối khi đầy, và cơ chế bulkhead chia pool theo dependency",
       "connects": [
         {
-          "t": "Race condition và deadlock",
+          "t": "Vì race condition và deadlock đều làm request kẹt, nên thread pool liên quan ở chỗ pool cạn cũng làm request kẹt, nhưng nguyên nhân khác hẳn: pool cạn là hết tài nguyên, deadlock là chờ nhau, và chẩn đoán sai nguyên nhân sẽ chữa sai, ví dụ tăng pool trong khi thật ra là deadlock.",
           "day": 15
         },
         {
-          "t": "Thread-safe collection",
+          "t": "Vì thread-safe collection bảo vệ trạng thái dùng chung, nên pool và collection phải thiết kế cùng nhau: pool càng nhiều thread thì càng nhiều thread cùng chạm vào collection, và collection không an toàn sẽ hỏng nhanh hơn đúng lúc pool được tăng lên.",
           "day": 15
         },
         {
-          "t": "Timeout để giải phóng thread khi dependency chậm",
+          "t": "Vì timeout giải phóng thread khi dependency chậm, nên pool chỉ phát huy tác dụng khi đi kèm timeout: không có timeout thì thread bị dependency chậm giữ mãi, pool đầy dần dù số request không tăng, và từ chối có kiểm soát cũng không cứu được.",
           "day": 18
         },
         {
-          "t": "Khả năng chịu tải của toàn bộ hệ thống"
+          "t": "Vì giới hạn pool và hàng đợi quyết định hệ thống chịu được bao nhiêu request cùng lúc trước khi từ chối, nên khả năng chịu tải của toàn bộ hệ thống không đo bằng số thread tối đa có thể tạo, mà đo bằng hành vi khi vượt giới hạn đó."
         }
-      ]
+      ],
+      "shape": "decision",
+      "difficulty": 2,
+      "thresholds": "Ví dụ từ gói vật liệu: pool 50 thread, hàng đợi 1.000, đầy thì trả 503 kèm Retry-After. Pool cho tác vụ chờ IO cần nhiều thread hơn pool cho tác vụ tính toán nặng, vì phần lớn thời gian của IO là chờ chứ không phải tính; pool CPU-bound thì số thread nên gần số lõi CPU.",
+      "dontUse": "Không dùng thread pool không giới hạn hay hàng đợi không giới hạn với lý do không muốn từ chối người dùng, vì từ chối một phần rõ ràng tốt hơn để toàn bộ hệ thống chết vì hết bộ nhớ và không phục vụ được ai.",
+      "quiz": {
+        "q": "Service gọi API bên ngoài chậm 5 giây, pool 50 thread, hàng đợi không giới hạn. Traffic tăng đột biến lên 5.000 request cùng lúc. Điều gì xảy ra và sửa ra sao?",
+        "answer": "Request xếp hàng vô hạn, chờ tới timeout hàng loạt, và bộ nhớ phình vì hàng đợi; sửa bằng cách giới hạn hàng đợi, đặt timeout nhỏ hơn timeout của client, và trả 503 rõ ràng khi đầy.",
+        "why": "Pool hữu hạn mà hàng đợi vô hạn thì tải đột biến không biến mất mà chỉ dồn thành chờ đợi và timeout; giới hạn hàng đợi biến quá tải thành từ chối có kiểm soát thay vì sập toàn bộ."
+      }
     },
     {
-      "what": "Bất đồng bộ không có nghĩa là an toàn là nhắc nhở rằng chạy không đồng bộ chỉ thay đổi thứ tự và thời điểm chạy, không tự sửa shared state không an toàn. Hai tác vụ bất đồng bộ cùng sửa một biến chung vẫn race như hai thread bình thường. Bản chất của nó là tách hai khái niệm hay bị nhập chung: chờ IO hiệu quả và an toàn khi dùng chung dữ liệu.",
-      "role": "Nó giải quyết ảo tưởng rằng cứ chuyển sang bất đồng bộ là hết race condition. Nếu tin vào ảo tưởng đó, code bất đồng bộ vẫn đếm lệch và mất cập nhật, mà lỗi còn khó tái hiện hơn vì thứ tự chạy càng không đảm bảo. Triệu chứng cụ thể là code bất đồng bộ chạy một lần đúng nhưng chạy nhiều lần lệch, giống hệt lỗi race của code đồng bộ.",
+      "what": "Bất đồng bộ không có nghĩa là an toàn là nhắc nhở rằng chạy bất đồng bộ chỉ thay đổi thứ tự và thời điểm chạy, không tự sửa shared state (trạng thái dùng chung) không an toàn. Hai tác vụ bất đồng bộ cùng sửa một biến chung vẫn race như hai thread bình thường, chỉ là thứ tự chạy càng khó đoán hơn.",
+      "role": "Ảo tưởng nguy hiểm ở đây là cứ chuyển sang CompletableFuture hay Reactor (framework lập trình reactive, chạy bất đồng bộ theo luồng dữ liệu) là hết race. Thực tế code bất đồng bộ vẫn đếm lệch và mất cập nhật, mà lỗi còn khó tái hiện hơn vì thứ tự chạy càng không đảm bảo, nên test một lần đúng càng không chứng minh được gì.",
       "map": "Hệ thống đặt hàng > Tầng ứng dụng > Đồng thời > Tác vụ bất đồng bộ, kề bên biến dùng chung, thread pool chạy tác vụ nền, cơ chế khóa và phép nguyên tử, và luồng xử lý IO",
       "connects": [
         {
-          "t": "Thread-safe collection",
+          "t": "Vì thread-safe collection là cách bảo vệ trạng thái dùng chung ở mức cấu trúc, nên code bất đồng bộ vẫn phải dùng Atomic hay ConcurrentHashMap như code đồng bộ: đổi sang bất đồng bộ không thay thế được cấu trúc an toàn, và bỏ cấu trúc an toàn đi là bỏ luôn lớp bảo vệ duy nhất.",
           "day": 15
         },
         {
-          "t": "Race condition và deadlock",
+          "t": "Vì race condition là lỗi thứ tự chạy không đảm bảo, nên bất đồng bộ làm race khó thấy hơn chứ không làm race biến mất: thứ tự chạy càng tự do thì càng nhiều cách xen kẽ, và mỗi cách xen kẽ là một cơ hội để đọc-sửa-ghi bị chen ngang.",
           "day": 15
         },
         {
-          "t": "Virtual thread không sửa được code giữ lock lâu",
+          "t": "Vì virtual thread cũng chỉ làm cho việc chờ IO rẻ hơn chứ không sửa shared state, nên bất đồng bộ và virtual thread giống nhau ở điểm này: cả hai đều tối ưu cách chờ, không tối ưu tính đúng đắn của dữ liệu dùng chung, và nhầm hai việc này sẽ chữa sai bệnh.",
           "day": 1
         },
         {
-          "t": "Tính đúng đắn của code bất đồng bộ trong toàn bộ ứng dụng"
+          "t": "Vì code bất đồng bộ lan khắp ứng dụng mà lỗi của nó chỉ lộ lúc đông người dùng, nên tính đúng đắn của code bất đồng bộ trong toàn bộ ứng dụng phải được kiểm tra bằng test nhiều luồng và review shared state, chứ không phải bằng việc code chạy được một lần."
         }
-      ]
+      ],
+      "shape": "definition",
+      "difficulty": 1,
+      "dontUse": "Không dùng chuyển sang bất đồng bộ làm biện pháp sửa race condition, và không dùng CompletableFuture.supplyAsync chạy ở pool khác rồi cùng sửa một biến chung mà không có Atomic, lock hay cấu trúc an toàn.",
+      "quiz": {
+        "q": "Hai CompletableFuture cùng chạy supplyAsync và cùng làm biến đếm n++ với n là int thường. Chạy một lần cho kết quả đúng, chạy 100 lần thì kết quả lệch. Kết luận đúng là gì?",
+        "answer": "Vẫn là race condition; chạy một lần đúng không chứng minh được an toàn, vì bất đồng bộ chỉ thay đổi thứ tự chạy chứ không làm n++ thành nguyên tử.",
+        "why": "n++ vẫn là đọc, cộng, ghi không nguyên tử dù chạy ở thread nào hay ở future nào; muốn an toàn phải dùng AtomicInteger hoặc lock, không phải đổi sang bất đồng bộ."
+      }
     }
   ],
-  "16": [
+  "16":   [
     {
-      "what": "Kafka là hệ thống message dạng log, chia dữ liệu thành partition và cho consumer đọc lại từ offset đã lưu. Thứ tự chỉ được đảm bảo trong một partition, và consumer group chia partition cho các consumer trong nhóm. Bản chất của nó là một luồng sự kiện có thể phát lại, hợp với dữ liệu lớn và cần phân tích lại sau.",
-      "role": "Nó giải quyết việc xử lý luồng sự kiện lớn và cần replay, mà hàng đợi thông thường khó làm tốt. Nếu chọn sai key partition, thứ tự của cùng một đơn có thể lộn xộn hoặc thêm consumer cũng không tăng tốc vì partition ít hơn consumer. Triệu chứng cụ thể là thêm consumer mà tốc độ không tăng, hoặc các sự kiện của cùng một đơn xử lý sai thứ tự.",
+      "what": "Kafka là một nhật ký sự kiện chỉ ghi thêm (append-only log): producer ghi event vào topic, topic chia thành nhiều partition (phần của log, mỗi phần là một dãy có thứ tự riêng), và consumer đọc lại từ offset (vị trí đã đọc tới đâu trong partition). Cùng một key (khóa phân vùng, ví dụ orderId) thì luôn rơi vào cùng một partition, nên thứ tự chỉ được giữ trong một partition, không giữ giữa các partition khác nhau. Một consumer group (nhóm consumer cùng chia việc) sẽ chia các partition cho các consumer trong nhóm, và việc đặt lại offset về vị trí cũ cho phép đọc lại toàn bộ lịch sử event để phân tích lại.",
+      "role": "Chọn key sai là cách nhanh nhất để phá thứ tự: nếu key là ngẫu nhiên hoặc để trống, 3 event Created, Paid, Shipped của cùng một đơn có thể rải ra 3 partition và service kế toán xử lý Paid trước Created. Thêm consumer cũng không cứu được khi partition quá ít: topic có 3 partition mà nhóm có 10 consumer thì tối đa 3 consumer có việc, 7 consumer còn lại ngồi không vì một partition trong cùng group chỉ giao cho đúng một consumer. Dấu hiệu nhận ra là thêm consumer mà tốc độ xử lý không tăng, hoặc event của cùng một đơn về đích sai thứ tự.",
       "map": "Hệ thống đặt hàng > Tầng tích hợp > Message broker > Kafka, kề bên topic đơn hàng, consumer group, bảng lưu offset, và service kế toán hoặc phân tích log",
       "connects": [
         {
-          "t": "At-least-once và idempotent consumer",
+          "t": "Vì Kafka vẫn có thể giao lại cùng một event sau khi consumer gặp sự cố, nên dùng Kafka mà không làm consumer chịu được trùng thì tiền và điểm sẽ lệch, và đó chính là bài toán idempotent consumer phải giải.",
           "day": 16
         },
         {
-          "t": "RabbitMQ",
+          "t": "Khi chỉ cần giao từng task cho đúng một worker rồi quên đi, Kafka là thừa vì nó giữ lại cả lịch sử log để phát lại, trong khi RabbitMQ giao xong là xong và gọn hơn cho bài toán đó.",
           "day": 16
         },
         {
-          "t": "Outbox Pattern để ghi event cùng transaction",
+          "t": "Event mà Kafka giữ lại chỉ có giá trị khi nó thật sự được ghi ra: nếu ghi đơn thành công nhưng publish event thất bại thì không có event nào trong log cả, nên cần outbox để việc ghi đơn và ghi event cùng thành công hoặc cùng thất bại.",
           "day": 17
         },
         {
-          "t": "Luồng sự kiện của toàn bộ hệ thống"
+          "t": "Luồng sự kiện của toàn bộ hệ thống mà chạy trên Kafka thì mọi service hạ nguồn đều đọc cùng một lịch sử, vì vậy một event sai thứ tự hay sai nội dung ở đầu nguồn sẽ lan tới mọi service đọc sau đó."
         }
-      ]
+      ],
+      "shape": "trace",
+      "difficulty": 2,
+      "thresholds": "Số consumer đang chạy trong một group không nên vượt số partition nếu muốn mọi consumer đều có việc; muốn tăng song song thì phải tăng partition trước, nhưng tăng partition sau khi hệ thống đã chạy có thể làm key cũ rơi sang partition khác và phá thứ tự đã có, nên số partition cần tính trước theo tải đỉnh.",
+      "dontUse": "Không dùng khi việc cần làm chỉ là giao một task cho một worker xử lý xong là quên, không cần phát lại lịch sử hay cho nhiều service cùng đọc lại event cũ.",
+      "quiz": {
+        "q": "Topic orders có 3 partition, consumer group có 5 consumer. Bạn thêm tiếp 5 consumer nữa (tổng 10) và kỳ vọng tốc độ tăng gấp đôi. Kết quả thật là gì và vì sao?",
+        "answer": "Tốc độ không tăng: tối đa 3 consumer nhận partition, 7 consumer còn lại ngồi không.",
+        "why": "Trong một consumer group, mỗi partition chỉ được giao cho đúng một consumer, nên số consumer có việc bị chặn cứng bởi số partition, không phải bởi số consumer bạn chạy thêm."
+      }
     },
     {
-      "what": "RabbitMQ là hệ thống message dạng hàng đợi, dùng exchange để định tuyến message tới queue rồi tới consumer. Message lỗi nhiều lần được đưa sang dead-letter queue để xem sau thay vì chặn queue chính. Bản chất của nó là một hệ thống giao từng message tới đúng nơi cần xử lý, hợp với task queue và định tuyến linh hoạt.",
-      "role": "Nó giải quyết việc giao task tới đúng consumer và xử lý message lỗi mà không làm tắc toàn bộ. Nếu thiếu dead-letter và giới hạn retry, một message lỗi có thể chặn queue chính hoặc retry vô hạn làm đầy log. Triệu chứng cụ thể là cả queue đứng yên vì một message lỗi, hoặc log phình vì cùng một message được thử lại không ngừng.",
+      "what": "RabbitMQ là hệ thống hàng đợi theo kiểu giao từng message: producer gửi tới exchange (bộ định tuyến, gồm direct định tuyến theo key chính xác, topic theo mẫu key, fanout gửi tới mọi queue), exchange theo binding (luật nối exchange với queue bằng routing key) đưa message vào queue, và consumer lấy từng message ra xử lý rồi xác nhận (ack). Message bị xử lý lỗi nhiều lần sẽ được chuyển sang dead-letter queue (hàng đợi thư chết: nơi chứa message lỗi để xem lại sau) thay vì nằm chặn queue chính.",
+      "role": "Thiếu dead-letter và giới hạn số lần thử lại, một message lỗi sẽ kẹt ở đầu queue: consumer lấy nó, lỗi, trả lại, lấy lại, và mọi message xếp sau nó không bao giờ được xử lý, trong khi log phình lên vì cùng một message bị thử lại không ngừng. Ví dụ: queue gửi email có 1 message với địa chỉ nhận sai định dạng, consumer thử lại vô hạn thì 10.000 email xếp sau nó đứng yên cả buổi dù chúng hoàn toàn hợp lệ. Dấu hiệu nhận ra là cả queue đứng yên vì một message, hoặc log lặp lại cùng một message id hàng nghìn lần.",
       "map": "Hệ thống đặt hàng > Tầng tích hợp > Message broker > RabbitMQ, kề bên exchange và routing key, queue xử lý email, dead-letter queue, và consumer xử lý từng message",
       "connects": [
         {
-          "t": "Kafka",
+          "t": "RabbitMQ và Kafka khác nhau ở đơn vị giao việc: RabbitMQ giao mỗi message cho một consumer rồi xóa sau khi ack, còn Kafka giữ lại log để nhiều consumer cùng đọc lại, nên chọn sai là chọn sai cả cách dữ liệu tồn tại sau khi xử lý.",
           "day": 16
         },
         {
-          "t": "Khi nào gọi sync là đủ",
+          "t": "Việc nào gửi qua RabbitMQ cũng phải qua bài toán sync hay queue trước: chỉ những việc không cần trả lời ngay mới xứng đáng vào queue, còn việc cần kết quả ngay mà đưa vào queue thì user sẽ không biết thành công hay thất bại.",
           "day": 16
         },
         {
-          "t": "Saga choreography dùng event để nối các bước",
+          "t": "Một saga kiểu choreography chạy bằng event sẽ dùng chính cơ chế định tuyến và dead-letter này để nối các bước, vì vậy message lỗi mà không có dead-letter sẽ không chỉ kẹt một queue mà còn kẹt cả một bước trong saga.",
           "day": 17
         },
         {
-          "t": "Xử lý tác vụ nền của toàn bộ hệ thống"
+          "t": "Tác vụ nền của toàn bộ hệ thống mà dồn hết vào một queue không có dead-letter thì một message hỏng duy nhất cũng đủ làm tắc toàn bộ tác vụ nền, trong khi tách queue theo loại việc và có dead-letter thì lỗi chỉ khoanh lại trong đúng queue đó."
         }
-      ]
+      ],
+      "shape": "trace",
+      "difficulty": 2,
+      "thresholds": "Đặt giới hạn thử lại trước khi chuyển sang dead-letter (ví dụ 3-5 lần theo ví dụ trong tài liệu ngày 18 cho retry) rồi mới đưa message vào dead-letter; không để retry vô hạn, vì mỗi lần thử lại đều tốn một lượt xử lý và giữ message lỗi ở đầu queue.",
+      "dontUse": "Không dùng khi cần phát lại toàn bộ lịch sử event tháng trước hoặc cần nhiều service cùng đọc lại cùng một event, vì message đã ack trong RabbitMQ là bị xóa khỏi queue và không phát lại được như log của Kafka.",
+      "quiz": {
+        "q": "Exchange fanout nối với 2 queue A và B, producer gửi 1 message. Consumer của A ack xong, consumer của B chưa xử lý. Hỏi message còn ở đâu, và nếu B xử lý lỗi 6 lần liên tiếp (giới hạn retry là 5) thì message đi đâu?",
+        "answer": "Message đã bị xóa khỏi queue A sau ack, vẫn còn ở queue B; sau lần lỗi thứ 6 (vượt giới hạn 5) nó bị chuyển sang dead-letter queue, queue B tiếp tục xử lý message tiếp theo.",
+        "why": "Mỗi queue giữ một bản copy riêng và ack chỉ xóa bản của queue đó; giới hạn retry là để message lỗi không chặn queue chính mà chuyển sang nơi xem lại sau."
+      }
     },
     {
-      "what": "At-least-once nghĩa là message có thể được giao ít nhất một lần, tức là có thể trùng khi consumer gặp sự cố sau khi xử lý nhưng trước khi xác nhận. Idempotent consumer là consumer xử lý message trùng mà không gây tác dụng phụ lần hai, thường bằng cách lưu key dedup cùng với tác dụng nghiệp vụ. Exactly-once trong thực tế rất khó và đắt, nên không nên hứa bừa. Bản chất của cặp này là chấp nhận trùng ở tầng giao message và bù lại bằng tính idempotent ở tầng xử lý.",
-      "role": "Nó giải quyết việc trừ điểm, trừ tiền hay trừ kho bị nhân đôi khi message giao lại. Nếu consumer không idempotent, chỉ một lần restart đúng lúc cũng đủ làm điểm bị trừ hai lần. Triệu chứng cụ thể là điểm hoặc tiền lệch đúng bằng một lần xử lý sau khi consumer restart, dù log cho thấy không có request mới từ người dùng.",
+      "what": "At-least-once (giao ít nhất một lần) nghĩa là broker có thể giao cùng một message hai lần: consumer xử lý xong nhưng gặp sự cố trước khi ack hoặc trước khi commit offset thì broker tưởng message chưa xử lý và giao lại. Idempotent consumer (consumer lũy đẳng: xử lý lại cùng một input cho kết quả như chỉ xử lý một lần) là cách bù lại: consumer lưu dedup key (khóa chống trùng, thường là eventId) cùng với tác dụng nghiệp vụ trong một transaction, gặp lại eventId cũ thì bỏ qua. Exactly-once (giao đúng một lần) trong thực tế rất khó và đắt vì nó đòi hỏi broker, consumer và database phối hợp nguyên tử, nên đừng hứa bừa.",
+      "role": "Consumer không idempotent thì chỉ cần một lần restart đúng lúc cũng đủ làm tiền lệch: event evt-991 trừ 50 điểm, consumer trừ điểm và commit xong nhưng crash trước khi ack, broker giao lại evt-991, consumer trừ thêm 50 điểm nữa, tổng cộng user mất 100 điểm cho một lần mua dù log không hề có request mới nào từ user. Dấu hiệu nhận ra là số dư lệch đúng bằng một lần xử lý sau mỗi lần consumer restart hoặc deploy, và lệch đúng vào những thời điểm có redelivery trong log.",
       "map": "Hệ thống đặt hàng > Tầng tích hợp > Message broker > Consumer idempotent, kề bên bảng dedup theo event id, transaction trừ điểm, dead-letter queue, và cơ chế xác nhận message",
       "connects": [
         {
-          "t": "Kafka",
+          "t": "Dù chọn Kafka hay RabbitMQ thì redelivery vẫn xảy ra, vì vậy idempotent consumer là lớp phòng thủ bắt buộc ở phía consumer chứ không phải là tính năng mà broker nào hứa thay được.",
           "day": 16
         },
         {
-          "t": "RabbitMQ",
+          "t": "RabbitMQ cũng giao lại message khi consumer không ack, nên cùng một lỗi trừ điểm hai lần sẽ xảy ra ở cả hai broker nếu consumer không có dedup, và khác broker không làm lỗi này biến mất.",
           "day": 16
         },
         {
-          "t": "Outbox Pattern và dedup khi gửi trùng",
+          "t": "Outbox ở phía gửi và dedup ở phía nhận là hai nửa của cùng một đường dây tin cậy: outbox giữ cho event không bị mất khi publish lỗi, còn dedup giữ cho event bị gửi trùng không gây tác dụng hai lần.",
           "day": 17
         },
         {
-          "t": "Tính đúng đắn của tiền và điểm trong toàn bộ hệ thống"
+          "t": "Tính đúng đắn của tiền và điểm trong toàn bộ hệ thống phụ thuộc vào dedup nhiều hơn vào lời hứa của broker, vì broker chỉ hứa giao ít nhất một lần chứ không hứa giao đúng một lần."
         }
-      ]
+      ],
+      "shape": "incident",
+      "difficulty": 3,
+      "thresholds": "Không đặt TTL (thời gian sống) của dedup key ngắn hơn khoảng thời gian mà message còn có thể bị giao lại: với event tài chính, giữ dedup vĩnh viễn hoặc ít nhất dài hơn toàn bộ cửa sổ retry và redelivery, vì xóa dedup sớm thì message giao lại muộn sẽ bị xử lý lần hai như message mới.",
+      "dontUse": "Không dùng khi tác dụng phụ không chịu được việc chạy hai lần mà bạn lại chưa có dedup key, ví dụ trừ tiền hay trừ kho mà consumer chỉ trừ rồi ack: lúc đó phải thêm dedup trước, không được đưa consumer trần vào production.",
+      "quiz": {
+        "q": "Log cho thấy: UPDATE points SET balance = balance - 50 WHERE user_id = 7 (commit thành công), sau đó consumer crash trước khi ack, rồi broker giao lại cùng event evt-991 cho consumer không có dedup. Số dư cuối cùng của user lệch bao nhiêu so với đúng, và sửa bằng dòng kiểm tra nào?",
+        "answer": "Lệch thêm 50 điểm (trừ tổng 100 thay vì 50). Sửa bằng cách kiểm tra eventId trong bảng dedup cùng transaction với UPDATE: nếu evt-991 đã có thì bỏ qua, chưa có thì trừ điểm và ghi dedup cùng lúc.",
+        "why": "Redelivery sau khi commit nhưng trước ack là trường hợp bình thường của at-least-once, nên chỉ có dedup gắn với tác dụng nghiệp vụ mới phân biệt được lần giao lại với lần xử lý mới."
+      }
     },
     {
-      "what": "Khi nào gọi sync là đủ là nguyên tắc chọn gọi đồng bộ khi cần kết quả ngay và cần báo lỗi ngay cho người dùng. Việc nặng, không cần ngay, cần chịu tải đột biến hoặc cần retry thì mới đưa vào queue. Bản chất của nó là không phải cứ dùng queue là hiện đại, mà là chọn theo nhu cầu về thời gian trả lời của từng việc.",
-      "role": "Nó giải quyết việc đưa nhầm việc cần kết quả ngay vào queue, khiến người dùng không biết thành công hay thất bại. Ngược lại, gọi sync cho việc nặng sẽ làm request timeout dù việc vẫn chạy nền. Triệu chứng cụ thể là người dùng đặt hàng xong không biết thanh toán ra sao, hoặc request timeout chỉ vì phải chờ gửi email xong mới trả lời.",
+      "what": "Gọi sync (đồng bộ: gọi và chờ kết quả ngay trong chính request đó) là lựa chọn đúng khi user cần biết ngay thành công hay thất bại để quyết định bước tiếp theo. Đưa vào queue (hàng đợi: ghi việc lại, trả lời ngay, việc chạy sau) là lựa chọn đúng khi việc nặng, không cần ngay, cần chịu tải đột biến hoặc cần retry mà không bắt user chờ. Tiêu chí phân biệt không phải là công nghệ hiện đại hay không, mà là user có cần câu trả lời ngay trong request này hay không.",
+      "role": "Đưa nhầm việc cần kết quả ngay vào queue thì user đặt hàng xong chỉ thấy màn hình chờ mà không biết thanh toán thành công hay thất bại, và phải tự quay lại kiểm tra sau. Ngược lại, gọi sync cho việc nặng thì request timeout chỉ vì phải chờ gửi email xong mới trả lời, dù việc đặt hàng thực chất đã xong: ví dụ checkout gọi sync tới service email chậm 20 giây thì user thấy timeout dù đơn đã tạo thành công trong database. Dấu hiệu nhận ra là user phàn nàn không biết trạng thái giao dịch, hoặc request timeout mà nguyên nhân lại là một việc phụ không liên quan tới kết quả chính.",
       "map": "Hệ thống đặt hàng > Tầng tích hợp > Lựa chọn gọi sync hay queue, kề bên API thanh toán cần trả lời ngay, queue gửi email, queue đồng bộ kế toán, và timeout của client",
       "connects": [
         {
-          "t": "RabbitMQ",
+          "t": "RabbitMQ chỉ phát huy khi việc đã được xác định là không cần trả lời ngay, vì vậy quyết định sync hay queue phải đi trước việc chọn broker, và chọn broker trước khi trả lời câu hỏi này là làm ngược thứ tự.",
           "day": 16
         },
         {
-          "t": "Kafka",
+          "t": "Kafka cũng chỉ phù hợp với những việc chấp nhận trễ, vì event trong log phải chờ consumer đọc và xử lý, nên việc cần kết quả ngay mà đưa lên Kafka sẽ gặp đúng vấn đề chờ đợi như đưa vào queue.",
           "day": 16
         },
         {
-          "t": "Timeout và retry cho lời gọi sync",
+          "t": "Mọi lời gọi sync đều cần timeout và retry có kỷ luật, vì một lời gọi sync không có timeout sẽ giữ thread của mình tới khi dependency trả lời, và đó là lúc bài toán resilience bắt đầu.",
           "day": 18
         },
         {
-          "t": "Trải nghiệm chờ đợi của người dùng trong toàn bộ sản phẩm"
+          "t": "Trải nghiệm chờ đợi của người dùng trong toàn bộ sản phẩm được quyết định ở chính chỗ này: việc nào cần trả lời ngay mà bắt chờ thì user thấy hệ thống chậm, việc nào không cần ngay mà bắt chờ thì hệ thống tự làm mình chậm một cách vô ích."
         }
-      ]
+      ],
+      "shape": "decision",
+      "difficulty": 1,
+      "thresholds": "Mọi lời gọi sync đều phải có timeout rõ ràng (ví dụ trong tài liệu ngày 18: thanh toán 5 giây); quá timeout thì ngắt và trả lỗi rõ ràng, không chờ vô hạn để user tự đoán.",
+      "dontUse": "Không dùng queue khi user cần quyết định ngay từ kết quả, ví dụ xác nhận thanh toán trước khi chốt đơn hay kiểm tra tồn kho trước khi cho đặt: lúc đó bắt buộc gọi sync và báo lỗi ngay nếu thất bại.",
+      "quiz": {
+        "q": "Chọn sync hay queue cho 3 việc sau và giải thích mỗi lựa chọn bằng một câu: (a) xác nhận thanh toán khi checkout, (b) gửi email xác nhận đơn, (c) đồng bộ đơn sang hệ thống kế toán.",
+        "answer": "(a) sync vì user cần biết ngay thanh toán thành công hay thất bại để quyết định tiếp. (b) queue vì email chậm vài phút user vẫn chấp nhận và không ảnh hưởng tới việc chốt đơn. (c) queue vì kế toán không cần ngay trong request checkout và có thể xử lý theo lô, retry khi lỗi.",
+        "why": "Tiêu chí duy nhất là user có cần câu trả lời ngay trong request này hay không; việc nào không cần ngay thì đưa vào queue để request chính không phải chờ việc phụ."
+      }
     }
   ],
-  "17": [
+  "17":   [
     {
-      "what": "Vấn đề 2-phase ở đây là bài toán ghi database và gửi message là hai hệ khác nhau nên không có transaction chung bảo vệ cả hai. Ghi database thành công nhưng gửi message thất bại thì bên nhận không biết, và ngược lại cũng vậy. Bản chất của nó là không thể đảm bảo hai hệ độc lập cùng thành công trong một bước nếu không có cơ chế nối chúng lại.",
-      "role": "Nó giải quyết ảo tưởng rằng cứ gọi lần lượt hai thao tác là chúng sẽ cùng thành công. Nếu không có cơ chế nối, hệ thống sẽ rơi vào trạng thái nửa vời như có đơn nhưng kho không trừ, hoặc kho trừ rồi mà không có đơn. Triệu chứng cụ thể là đơn và kho lệch nhau sau một lần mạng chập, mà không có log nào cho biết phải sửa bên nào.",
+      "what": "Bài toán hai hệ (ghi database rồi gửi message, hoặc ngược lại) là bài toán không có transaction chung: database và message broker là hai hệ độc lập, không có cơ chế nào bảo đảm cả hai cùng thành công trong một bước. Ghi database thành công nhưng gửi message thất bại thì bên nhận không bao giờ biết; gửi message trước rồi ghi database thất bại thì bên nhận xử lý một event của một đơn không tồn tại. Tên gọi hai-phase ở đây chỉ bài toán đó, không phải là lời hứa rằng cứ làm hai bước lần lượt là xong.",
+      "role": "Hệ thống rơi vào trạng thái nửa vời mà không có log nào chỉ rõ phải sửa bên nào: đơn #5001 đã commit trong database nhưng mạng chập đúng lúc publish OrderCreated, kho không biết gì về đơn này, đơn ở trạng thái PAID mà kho chưa trừ, và đội trực phải đối soát tay hai database mới thấy lệch. Làm ngược lại cũng tệ không kém: kho trừ hàng cho một đơn mà database sau đó rollback, hàng mất mà đơn không có. Dấu hiệu nhận ra là đơn và kho lệch nhau đúng sau những lần mạng chập hoặc deploy, và lệch theo đúng một bước trong chuỗi hai bước.",
       "map": "Hệ thống đặt hàng > Tầng tích hợp > Giao dịch nhiều hệ > Nối database và message, kề bên bảng đơn hàng, bảng outbox, message broker, và service kho",
       "connects": [
         {
-          "t": "Outbox Pattern",
+          "t": "Chính vì hai bước lần lượt không bao giờ cùng thành công một cách chắc chắn nên mới cần outbox: outbox biến bước gửi message thành việc đọc lại từ database, nơi transaction đã bảo vệ tính nguyên tử của cả đơn và event.",
           "day": 17
         },
         {
-          "t": "Saga choreography vs orchestration",
+          "t": "Khi chuỗi không chỉ có hai bước mà kéo dài qua thanh toán rồi trừ kho, bài toán hai hệ này nhân lên thành saga, và mỗi bước thêm vào đều cần một đường quay lại riêng thay vì hy vọng cả chuỗi cùng thành công.",
           "day": 17
         },
         {
-          "t": "At-least-once và idempotent consumer",
+          "t": "At-least-once ở phía consumer là hệ quả tất yếu của việc không có transaction chung: vì không thể bảo đảm gửi đúng một lần, phía nhận buộc phải chịu được trùng thay vì giả định message chỉ tới một lần.",
           "day": 16
         },
         {
-          "t": "Tính nhất quán xuyên service của toàn bộ hệ thống"
+          "t": "Tính nhất quán xuyên service của toàn bộ hệ thống không thể xây trên lời hứa hai bước lần lượt sẽ cùng thành công, mà phải xây trên cơ chế ghi event cùng transaction và consumer chịu được trùng."
         }
-      ]
+      ],
+      "shape": "incident",
+      "difficulty": 2,
+      "dontUse": "Không dùng cách gọi lần lượt database rồi broker rồi hy vọng cả hai cùng thành công cho bất kỳ luồng nào mà mất một bên sẽ lệch dữ liệu: lúc đó phải dùng outbox hoặc chấp nhận trạng thái nửa vời một cách có chủ đích kèm quy trình đối soát.",
+      "quiz": {
+        "q": "Code làm theo thứ tự: publish event OrderCreated trước, rồi mới ghi đơn vào database, và bước ghi database lỗi. Service kho nhận event sẽ làm gì sai, và thứ tự nào cũng không sửa được bài toán này?",
+        "answer": "Kho sẽ trừ hàng cho một đơn không tồn tại. Đảo thứ tự cũng không sửa được: ghi database trước rồi publish lỗi thì kho không biết gì về đơn đã tạo, vẫn là trạng thái nửa vời.",
+        "why": "Hai hệ độc lập không có transaction chung nên bất kỳ thứ tự lần lượt nào cũng có một khe hở giữa hai bước, và chỉ có cơ chế nối hai bước lại (outbox) mới lấp được khe hở đó."
+      }
     },
     {
-      "what": "Outbox Pattern là cách ghi dữ liệu nghiệp vụ và event vào cùng một transaction trong cùng một database, event nằm trong bảng outbox. Một worker riêng sau đó đọc outbox và gửi message, thất bại thì thử lại chứ không mất event. Bản chất của nó là biến việc gửi message thành việc đọc lại từ database, nơi transaction đã bảo vệ tính nguyên tử.",
-      "role": "Nó giải quyết việc mất event khi ghi database xong nhưng gửi message thất bại giữa chừng. Nếu không có outbox, lỗi ở bước gửi là mất luôn event và không có worker nào gửi lại. Triệu chứng cụ thể là đơn đã tạo nhưng service nhận event không bao giờ nhận được gì, và chỉ phát hiện khi đối soát dữ liệu hai bên.",
+      "what": "Outbox Pattern (mẫu hộp thư đi) là cách ghi dữ liệu nghiệp vụ và event vào cùng một transaction trong cùng một database: bảng orders ghi đơn, bảng outbox_events ghi event tương ứng với trạng thái chưa gửi, và cả hai commit cùng nhau hoặc rollback cùng nhau. Một worker riêng (relay: tiến trình chuyên đọc outbox và gửi message) sau đó quét outbox, publish event lên broker, rồi mới đánh dấu đã gửi; publish thất bại thì event vẫn nằm trong outbox để thử lại, không mất.",
+      "role": "Không có outbox, lỗi ở bước gửi là mất luôn event: đơn đã tạo nhưng service nhận event không bao giờ nhận được gì, và chỉ phát hiện khi đối soát dữ liệu hai bên lệch nhau. Có outbox nhưng worker publish xong rồi crash trước khi đánh dấu đã gửi thì event bị gửi trùng, và lúc đó consumer phải có dedup mới không trừ kho hai lần: ví dụ worker publish evt-77 rồi crash, quét lại thấy evt-77 vẫn chưa đánh dấu nên publish lần hai, kho nhận hai lần. Dấu hiệu nhận ra outbox đang thiếu một nửa là đơn có nhưng event không tới (thiếu worker), hoặc kho trừ hai lần cho một đơn (thiếu dedup phía nhận).",
       "map": "Hệ thống đặt hàng > Tầng tích hợp > Giao dịch nhiều hệ > Bảng outbox, kề bên bảng đơn hàng, worker gửi message, message broker, và bảng dedup của consumer",
       "connects": [
         {
-          "t": "Vấn đề 2-phase",
+          "t": "Outbox tồn tại chính là để trả lời bài toán hai hệ: vì không thể bắt database và broker cùng commit, nên nó dời bước gửi message vào trong database, nơi transaction đã bảo vệ được cả đơn và event.",
           "day": 17
         },
         {
-          "t": "Hành động bù",
+          "t": "Mọi bước bù trong saga đều phụ thuộc vào việc event của bước thuận thật sự tới được nơi cần bù, nên saga mà không có outbox sẽ có những bước lỗi mà không ai kích hoạt bù vì event của chúng đã mất trên đường.",
           "day": 17
         },
         {
-          "t": "Transaction và cơ chế bù ở checkpoint tuần dữ liệu",
+          "t": "Ở checkpoint tuần dữ liệu, nguyên tắc mọi luồng ghi nhiều bước đều phải có transaction hoặc cơ chế bù đã đặt nền cho outbox: outbox là cách áp dụng nguyên tắc đó khi một trong các bước là gửi message ra ngoài hệ thống.",
           "day": 14
         },
         {
-          "t": "Độ tin cậy của event trong toàn bộ hệ thống"
+          "t": "Độ tin cậy của event trong toàn bộ hệ thống được đo bằng số event mất, chứ không phải bằng số event gửi thành công trong ngày đẹp trời, và outbox là thứ giữ con số event mất đó ở mức 0 khi publish gặp sự cố."
         }
-      ]
+      ],
+      "shape": "trace",
+      "difficulty": 2,
+      "dontUse": "Không dùng khi hệ thống chỉ có một database và không cần publish event ra ngoài: lúc đó outbox chỉ thêm một bảng và một worker mà không giải quyết bài toán nào, vì không có hệ thứ hai để nối.",
+      "quiz": {
+        "q": "Worker publish evt-77 thành công, crash trước khi đánh dấu đã gửi, quét lại và publish evt-77 lần hai. Consumer không có dedup sẽ làm gì sai, và dòng code nào ở phía consumer sửa được?",
+        "answer": "Consumer trừ kho hai lần cho cùng một đơn. Sửa bằng cách kiểm tra eventId evt-77 trong bảng dedup cùng transaction với việc trừ kho: đã có thì bỏ qua, chưa có thì trừ kho và ghi dedup cùng lúc.",
+        "why": "Đánh dấu đã gửi sau khi publish vẫn để lại khe hở trùng, nên outbox chỉ bảo đảm event không mất, còn việc không xử lý trùng hai lần phải do dedup phía nhận bảo đảm."
+      }
     },
     {
-      "what": "Saga choreography là kiểu mỗi service nghe event rồi tự làm bước tiếp theo, không có ai điều phối chung. Saga orchestration là kiểu một orchestrator giữ trạng thái tổng, gọi từng bước theo thứ tự và gọi bù khi lỗi. Bản chất khác nhau nằm ở chỗ trạng thái tổng nằm rải rác trong các event hay nằm tập trung ở một nơi.",
-      "role": "Chúng giải quyết giao dịch nhiều bước xuyên service mà không có transaction chung. Choreography đơn giản lúc đầu nhưng khó theo dõi khi nhiều bước, lỗi ở bước giữa khó biết saga đang ở đâu và phải bù từ đâu. Orchestration dễ theo dõi hơn nhưng orchestrator thành điểm tập trung cần được chăm sóc. Triệu chứng cụ thể là saga lỗi giữa chừng mà không ai trả lời được nó đang kẹt ở bước nào.",
+      "what": "Saga là một giao dịch dài xuyên service được chia thành nhiều bước, mỗi bước có một bước bù tương ứng, vì không có transaction chung nào bao được tất cả các service. Choreography (múa phối hợp: mỗi service nghe event rồi tự làm bước tiếp theo, không có ai điều phối chung) chạy như một dây chuyền: OrderCreated kích hoạt thanh toán, PaymentSucceeded kích hoạt trừ kho. Orchestration (điều phối tập trung: một orchestrator giữ máy trạng thái tổng, gọi từng bước theo thứ tự và gọi bù khi lỗi) chạy như một nhạc trưởng: orchestrator biết saga đang ở bước nào và đã bù tới đâu.",
+      "role": "Choreography đơn giản lúc đầu nhưng càng nhiều bước càng khó trả lời câu hỏi cơ bản nhất: saga này đang kẹt ở bước nào? Muốn biết phải lần log của từng service theo event, và khi một event bị mất giữa chừng thì không service nào biết mình phải làm tiếp, đơn kẹt ở trạng thái đã trả tiền nhưng chưa trừ kho mà không có nơi nào ghi rõ nó kẹt. Orchestration trả lời được ngay bằng cách tra trạng thái của orchestrator, nhưng đổi lại orchestrator thành điểm tập trung: nó chết thì mọi saga đang chạy đều đứng, nên nó cần được chăm sóc như một service quan trọng chứ không phải một đoạn code phụ. Dấu hiệu nhận ra choreography đã quá tải là mỗi lần debug sự cố phải mở log của 3 service trở lên mới lần ra được một đơn.",
       "map": "Hệ thống đặt hàng > Tầng tích hợp > Saga > Điều phối nhiều bước, kề bên service đơn hàng, service thanh toán, service kho, và các bước bù",
       "connects": [
         {
-          "t": "Hành động bù",
+          "t": "Saga chỉ có ý nghĩa khi mỗi bước đều có bước bù đi kèm, vì một chuỗi bước thuận mà không có đường quay lại thì lỗi ở bước cuối sẽ để lại trạng thái kẹt không tiến cũng không lùi.",
           "day": 17
         },
         {
-          "t": "Outbox Pattern",
+          "t": "Event của saga chỉ đáng tin khi nó được ghi cùng transaction với dữ liệu nghiệp vụ, nên saga mà thiếu outbox sẽ có những bước không bao giờ được kích hoạt chỉ vì event của chúng mất trên đường publish.",
           "day": 17
         },
         {
-          "t": "Eventual consistency làm nền cho saga",
+          "t": "Saga chấp nhận rằng các bước không khớp ngay lập tức mà khớp dần theo thời gian, và đó chính là eventual consistency: đơn có thể ở trạng thái trung gian một lúc trước khi mọi service cùng thấy kết quả cuối.",
           "day": 19
         },
         {
-          "t": "Luồng đặt hàng xuyên service của toàn bộ hệ thống"
+          "t": "Luồng đặt hàng xuyên service của toàn bộ hệ thống mà không chọn rõ choreography hay orchestration thì mỗi team sẽ tự nối bước theo cách riêng, và cuối cùng không ai vẽ được toàn bộ luồng đặt hàng trên một sơ đồ duy nhất."
         }
-      ]
+      ],
+      "shape": "compare",
+      "difficulty": 3,
+      "dontUse": "Không dùng choreography khi luồng có nhiều bước và bạn cần trả lời nhanh câu hỏi đơn này đang kẹt ở bước nào và đã bù tới đâu: lúc đó orchestration tra một nơi nhanh hơn việc lần log của nhiều service.",
+      "quiz": {
+        "q": "Saga choreography 3 bước: đơn hàng -> thanh toán -> trừ kho. Event PaymentSucceeded bị mất trên đường tới service kho. Đơn sẽ ở trạng thái gì, service nào biết nó kẹt, và cần thêm cơ chế nào để phát hiện?",
+        "answer": "Đơn kẹt ở trạng thái đã trả tiền nhưng chưa trừ kho, và không service nào biết nó kẹt vì service kho không nhận được event nên không có gì để báo. Cần thêm cơ chế theo dõi theo thời gian, ví dụ orchestrator hoặc job quét các đơn PAID quá lâu mà chưa có trừ kho rồi kích hoạt bù hoặc cảnh báo.",
+        "why": "Choreography không giữ trạng thái tổng, nên một event mất là một bước biến mất âm thầm; chỉ có nơi giữ trạng thái tổng hoặc job quét theo thời gian mới phát hiện được saga kẹt."
+      }
     },
     {
-      "what": "Hành động bù là thao tác ngược lại một bước đã làm, ví dụ hoàn tiền để bù cho thanh toán, cộng lại kho để bù cho trừ kho, hủy đơn để bù cho tạo đơn. Không phải bước nào cũng bù được, như hàng đã giao vật lý thì không thể tự động thu hồi. Bản chất của nó là chấp nhận không rollback được như transaction, nên phải thiết kế sẵn đường quay lại cho từng bước.",
-      "role": "Nó giải quyết trạng thái kẹt khi saga lỗi giữa chừng mà không có cách nào sửa. Nếu saga chỉ có bước thuận mà không có bước bù, lỗi ở bước cuối sẽ để lại đơn đã trả tiền nhưng không giao được. Triệu chứng cụ thể là đơn ở trạng thái không tiến cũng không lùi, và nhân viên phải sửa tay từng đơn vì không có quy trình bù.",
+      "what": "Hành động bù (compensating action) là thao tác nghiệp vụ ngược lại một bước đã làm: hoàn tiền để bù cho thanh toán, cộng lại kho để bù cho trừ kho, hủy đơn để bù cho tạo đơn. Khác với rollback của transaction, bù không xóa dấu vết mà tạo thêm một thao tác mới đi ngược lại, và lịch sử vẫn ghi cả bước thuận lẫn bước bù. Có những bước không bù được: hàng đã giao vật lý thì không thể tự động thu hồi, tiền đã rút thì không thể tự hoàn nếu không có quy trình đối tác, và những bước đó phải chuyển sang trạng thái chờ xử lý tay với người chịu trách nhiệm rõ ràng.",
+      "role": "Saga chỉ có bước thuận mà không có bước bù thì lỗi ở bước cuối để lại đơn đã trả tiền nhưng không giao được, và nhân viên phải sửa tay từng đơn vì không có quy trình bù nào để chạy. Ví dụ: thanh toán 500.000 đồng thành công, trừ kho thất bại vì hết hàng, không có bước bù thì user mất tiền mà không có hàng, đơn treo ở trạng thái không tiến cũng không lùi. Ngược lại, bù mà không có idempotency key (khóa chống trùng cho chính thao tác bù) thì retry của bước bù sẽ hoàn tiền hai lần, biến một lần sửa lỗi thành một lần mất tiền mới.",
       "map": "Hệ thống đặt hàng > Tầng tích hợp > Saga > Bước bù, kề bên service thanh toán, service kho, bảng đơn hàng và trạng thái đơn, và quy trình xử lý tay cho bước không bù được",
       "connects": [
         {
-          "t": "Saga choreography vs orchestration",
+          "t": "Bù chỉ được kích hoạt khi saga biết mình đang ở bước nào và bước nào đã thành công, nên saga không có điều phối rõ ràng sẽ không biết phải bù từ đâu, và bù sai bước còn tệ hơn không bù.",
           "day": 17
         },
         {
-          "t": "Outbox Pattern",
+          "t": "Bước bù chỉ chạy được khi event của bước thuận thật sự tới nơi, nên outbox là tiền đề của bù: event mất thì không ai biết có bước nào cần bù.",
           "day": 17
         },
         {
-          "t": "Transaction và cơ chế bù ở checkpoint tuần dữ liệu",
+          "t": "Nguyên tắc mọi luồng ghi nhiều bước đều phải có transaction hoặc cơ chế bù ở checkpoint tuần dữ liệu chính là nguồn gốc của bước bù: khi transaction chung không thể bao được nhiều service, bù là cơ chế thay thế nó.",
           "day": 14
         },
         {
-          "t": "Khả năng phục hồi của đơn hàng trong toàn bộ hệ thống"
+          "t": "Khả năng phục hồi của đơn hàng trong toàn bộ hệ thống được đo bằng thời gian từ lúc lỗi tới lúc đơn về trạng thái cuối đúng (đã giao hoặc đã hoàn tiền và hủy), chứ không phải bằng việc hệ thống có vẽ được sơ đồ bù trên giấy hay không."
         }
-      ]
+      ],
+      "shape": "incident",
+      "difficulty": 2,
+      "thresholds": "Mọi thao tác bù liên quan tới tiền đều phải có idempotency key riêng: gọi hoàn tiền hai lần do retry cũng chỉ hoàn một lần, và bước bù phải được ghi trạng thái đã bù để lần chạy lại sau biết mà bỏ qua.",
+      "dontUse": "Không dùng bước bù tự động cho bước đã gây tác dụng vật lý không thu hồi được, ví dụ hàng đã giao tới tay khách: lúc đó phải dừng ở trạng thái chờ xử lý tay, không tự bù bừa bằng cách xóa đơn hay trừ tiền thêm.",
+      "quiz": {
+        "q": "Saga đã trừ kho rồi, bước giao hàng lỗi. Một đoạn code đề xuất xóa row đơn khỏi database để coi như chưa từng đặt hàng. Vì sao cách này sai, và bước bù đúng gồm những gì?",
+        "answer": "Sai vì xóa row làm mất dấu vết: không còn bằng chứng đơn từng tồn tại, tiền đã thu và kho đã trừ sẽ không đối soát được. Bù đúng là cộng lại kho, hoàn tiền cho user, và chuyển đơn sang trạng thái đã hủy kèm lý do, giữ lại toàn bộ lịch sử.",
+        "why": "Bù là tạo thêm thao tác ngược có dấu vết, không phải xóa quá khứ; xóa dữ liệu để giả vờ chưa xảy ra chỉ làm cho việc đối soát và xử lý khiếu nại sau đó không còn căn cứ."
+      }
     }
   ],
-  "18": [
+  "18":   [
     {
-      "what": "Timeout là giới hạn thời gian chờ tối đa cho một lời gọi tới service khác, quá hạn thì ngắt và trả lỗi rõ ràng thay vì chờ vô hạn. Nó biến một dependency chậm thành một lỗi có thời hạn, để thread và connection được giải phóng. Bản chất của nó là không cho một lời gọi chậm giữ tài nguyên của mình mãi mãi.",
-      "role": "Nó giải quyết việc một API chậm giữ thread và connection cho tới khi cả hệ thống nghẽn theo. Nếu không đặt timeout, pool thread sẽ đầy dần dù lượng truy cập không tăng. Triệu chứng cụ thể là thread pool đầy dần khi đối tác chậm, rồi request mới timeout hàng loạt dù CPU còn rảnh.",
+      "what": "Timeout (giới hạn chờ) là khoảng thời gian tối đa cho phép một lời gọi tới service khác tồn tại: connect timeout là thời gian chờ thiết lập kết nối, read timeout là thời gian chờ response sau khi đã kết nối. Quá hạn thì lời gọi bị ngắt, thread và connection đang giữ nó được giải phóng, và phía gọi trả về một lỗi rõ ràng thay vì treo mãi. Timeout biến một dependency chậm thành một lỗi có thời hạn.",
+      "role": "Không đặt timeout, một API chậm sẽ giữ thread và connection tới khi cả hệ thống nghẽn theo: ví dụ payment chậm 60 giây, mỗi request checkout giữ một thread 60 giây, pool 50 thread đầy sau 50 request đồng thời và request thứ 51 phải xếp hàng dù CPU còn rảnh, rồi hàng đợi cũng đầy và mọi tính năng khác dùng chung pool bắt đầu timeout theo. Đặt read timeout 5 giây thì mỗi request xấu nhất chỉ giữ thread 5 giây, pool giải phóng nhanh hơn 12 lần, và user nhận được lỗi rõ ràng để thử lại thay vì chờ treo.",
       "map": "Hệ thống đặt hàng > Tầng tích hợp > Resilience > Timeout, kề bên API thanh toán, thread pool, connection pool, và circuit breaker",
       "connects": [
         {
-          "t": "Retry + backoff + jitter",
+          "t": "Timeout là tiền đề của retry có kỷ luật: retry một lời gọi không có timeout thì lần thử lại cũng treo như lần đầu, nên retry chỉ an toàn khi mỗi lần thử đều có thời hạn rõ ràng.",
           "day": 18
         },
         {
-          "t": "Circuit breaker (Resilience4j)",
+          "t": "Khi timeout liên tục xảy ra với cùng một dependency, circuit breaker là lớp tiếp theo phải nhảy vào, vì timeout một mình chỉ giới hạn thiệt hại của từng request chứ không ngăn được việc hệ thống cứ gọi mãi vào một service đã chết.",
           "day": 18
         },
         {
-          "t": "Thread pool có giới hạn",
+          "t": "Thread pool có giới hạn là lý do timeout quan trọng tới vậy: pool là tài nguyên hữu hạn, và một lời gọi không timeout là một thread bị chiếm vô hạn, nên timeout chính là cách bảo vệ pool khỏi dependency chậm.",
           "day": 15
         },
         {
-          "t": "Độ ổn định của toàn bộ hệ thống khi dependency chậm"
+          "t": "Độ ổn định của toàn bộ hệ thống khi dependency chậm được quyết định trước hết bởi timeout, vì timeout là lớp rẻ nhất và sớm nhất ngăn một service chậm lan thành nghẽn toàn hệ thống."
         }
-      ]
+      ],
+      "shape": "trace",
+      "difficulty": 1,
+      "thresholds": "Ví dụ trong tài liệu ngày 18: thanh toán đặt read timeout 5 giây thay vì chờ 60 giây khi đối tác chậm. Nguyên tắc kèm theo: timeout của mình phải ngắn hơn timeout của client đang gọi mình, nếu không client ngắt trước mà server vẫn giữ thread vô ích.",
+      "dontUse": "Không dùng timeout dài bằng hoặc dài hơn timeout của client hoặc của request cha: lúc đó timeout của mình không bao giờ kịp cứu vì phía gọi đã ngắt và bỏ đi trước.",
+      "quiz": {
+        "q": "Pool có 50 thread, payment chậm 60 giây và không đặt timeout, 50 request checkout tới cùng lúc. Request thứ 51 gặp chuyện gì, và nếu đặt read timeout 5 giây thì bức tranh thay đổi ra sao?",
+        "answer": "Request thứ 51 phải xếp hàng chờ thread trống, và nếu hàng đợi cũng đầy thì nó timeout ở hàng đợi dù payment hay checkout đều không lỗi logic. Với timeout 5 giây, 50 thread đầu được giải phóng sau tối đa 5 giây thay vì 60 giây, nên request thứ 51 chỉ chờ tối đa 5 giây và nhận lỗi rõ ràng thay vì treo.",
+        "why": "Thread là tài nguyên hữu hạn, và thời gian giữ thread của mỗi request quyết định pool đầy nhanh hay chậm; timeout rút ngắn thời gian giữ đó xuống mức có thể chịu được."
+      }
     },
     {
-      "what": "Retry là thử lại lời gọi thất bại, backoff là tăng dần khoảng chờ giữa các lần thử, jitter là thêm ngẫu nhiên để các lần thử không rơi cùng một thời điểm. Ba thứ này đi cùng nhau vì retry ngay lập tức và đồng loạt sẽ làm service đang yếu càng yếu. Bản chất của nó là thử lại có kỷ luật, chỉ cho lỗi tạm thời và có rải thời gian.",
-      "role": "Nó giải quyết việc retry vô kỷ luật tạo ra retry storm lên service đang yếu. Nếu retry cả lỗi sai dữ liệu thì chỉ tốn request vô ích, và nếu retry thao tác không idempotent thì có thể nhân đôi giao dịch. Triệu chứng cụ thể là service đang yếu nhận thêm gấp nhiều lần lưu lượng ngay sau khi lỗi, đúng lúc nó cần được giảm tải nhất.",
+      "what": "Retry (thử lại) là gọi lại một lời gọi đã thất bại, backoff (lùi dần) là tăng khoảng chờ giữa các lần thử, ví dụ lần sau chờ lâu hơn lần trước, và jitter (nhiễu ngẫu nhiên) là cộng thêm một khoảng ngẫu nhiên vào thời gian chờ để các lần thử không rơi cùng một thời điểm. Ba thứ này đi cùng nhau vì retry ngay lập tức và đồng loạt sẽ dồn thêm tải lên service đang yếu đúng lúc nó cần được giảm tải nhất, hiện tượng gọi là retry storm (cơn bão thử lại).",
+      "role": "Retry không có backoff và jitter biến một sự cố nhỏ thành một đợt tấn công từ chính hệ thống của mình: 1.000 request cùng lỗi 503, mỗi request retry ngay 3 lần thì service đang yếu nhận thêm 3.000 request trong cùng một giây, và mỗi đợt retry thất bại lại sinh thêm đợt nữa. Có backoff và jitter, 3.000 lần thử lại đó vẫn xảy ra nhưng rải ra trong nhiều giây, đỉnh tải thấp hơn và service có khoảng thở để hồi phục. Retry sai loại lỗi còn tệ hơn: retry lỗi 400 (sai dữ liệu) thì lần nào cũng sai, chỉ tốn request; retry thao tác không idempotent mà không có idempotency key thì mỗi lần thử lại là một lần trừ tiền mới.",
       "map": "Hệ thống đặt hàng > Tầng tích hợp > Resilience > Retry, kề bên API thanh toán, circuit breaker, idempotency key, và hàng đợi retry",
       "connects": [
         {
-          "t": "Timeout",
+          "t": "Retry chỉ có ý nghĩa khi mỗi lần thử đều bị giới hạn bởi timeout, vì một lần thử không có timeout sẽ treo và lần thử tiếp theo không bao giờ tới, nên timeout và retry phải cấu hình cùng nhau.",
           "day": 18
         },
         {
-          "t": "Bulkhead và rate limiter",
+          "t": "Khi retry vẫn thất bại liên tục, bulkhead và rate limiter là lớp khoanh vùng tiếp theo: chúng giữ cho đợt retry của một dependency không ăn hết tài nguyên của các dependency khác và không vượt quá tốc độ mà phía nhận chịu được.",
           "day": 18
         },
         {
-          "t": "Idempotent consumer để retry không nhân đôi tác dụng",
+          "t": "Retry an toàn hay không phụ thuộc vào idempotent consumer: một thao tác thử lại nhiều lần mà mỗi lần đều gây tác dụng mới thì retry không còn là phục hồi mà là nhân đôi giao dịch.",
           "day": 16
         },
         {
-          "t": "Khả năng phục hồi của toàn bộ hệ thống khi lỗi tạm thời"
+          "t": "Khả năng phục hồi của toàn bộ hệ thống khi lỗi tạm thời được đo bằng việc hệ thống có tự khỏi mà không cần can thiệp tay hay không, và retry có backoff và jitter là cách rẻ nhất để đạt được điều đó với lỗi thoáng qua."
         }
-      ]
+      ],
+      "shape": "trace",
+      "difficulty": 2,
+      "thresholds": "Ví dụ trong tài liệu ngày 18: lần 1 thử ngay, lần 2 sau 1 giây, lần 3 sau 2 giây, lần 4 sau 4 giây, cộng jitter ngẫu nhiên cộng trừ 0,5 giây; chỉ retry lỗi tạm thời như timeout và 503, không retry 400.",
+      "dontUse": "Không dùng retry cho thao tác không idempotent mà không có idempotency key, và không retry lỗi 400 do sai dữ liệu: lần thử lại nào cũng sai như lần đầu và chỉ tốn thêm request.",
+      "quiz": {
+        "q": "1.000 request cùng lỗi 503, mỗi request retry 3 lần. Không jitter thì service nhận thêm bao nhiêu request và vào lúc nào; có jitter thì tổng số request thay đổi hay chỉ thời điểm thay đổi, và vì sao jitter vẫn đáng làm?",
+        "answer": "Không jitter: thêm 3.000 request dồn trong cùng một thời điểm ngay sau lỗi. Có jitter: tổng số vẫn là 3.000 lần thử lại, nhưng chúng rải ra trong nhiều giây thay vì dồn cùng lúc, nên đỉnh tải thấp hơn và service có khoảng thở để hồi phục.",
+        "why": "Jitter không giảm tổng số lần thử mà giảm độ đồng loạt: retry storm gây hại ở đỉnh tải, không phải ở tổng số, nên rải thời gian là đủ để cứu service đang yếu."
+      }
     },
     {
-      "what": "Circuit breaker là cơ chế ngắt mạch khi một dependency lỗi liên tục: thay vì tiếp tục gọi service đang chết, hệ thống trả fallback nhanh. Sau một thời gian nguội, nó cho một vài request thử lại, thành công thì đóng mạch, thất bại thì mở lại. Bản chất của nó là dừng việc gọi vô ích để cả hai phía đều có thời gian hồi phục.",
-      "role": "Nó giải quyết việc lỗi lan: gọi mãi service chết sẽ làm timeout chồng timeout và nghẽn cả hệ thống gọi. Nếu không có fallback rõ ràng, người dùng chỉ thấy lỗi chung chung thay vì biết chuyện gì đang xảy ra. Triệu chứng cụ thể là mọi request đều chờ tới timeout dù service đích đã chết rõ ràng, và hệ thống gọi cũng chậm theo.",
+      "what": "Circuit breaker (cầu dao) là cơ chế ngắt mạch khi một dependency lỗi liên tục: trạng thái closed (đóng mạch) cho gọi bình thường, open (mở mạch) chặn ngay mọi lời gọi và trả fallback (câu trả lời dự phòng, ví dụ thông báo rõ ràng hoặc dữ liệu cache cũ có ghi chú) mà không gọi tới service đích, half-open (hé mạch) cho một vài request thăm dò đi qua sau thời gian nguội, thành công thì đóng mạch lại, thất bại thì mở lại. Resilience4j là thư viện Java triển khai sẵn máy trạng thái này.",
+      "role": "Không có circuit breaker, mọi request đều chờ tới timeout dù service đích đã chết rõ ràng: payment chết, mỗi checkout vẫn chờ đủ 5 giây timeout rồi mới báo lỗi, 50 thread cứ xoay vòng chờ một service không trả lời, và hệ thống gọi cũng chậm theo dù lỗi nằm ở phía bên kia. Có circuit breaker, sau khi mạch mở thì checkout trả ngay thông báo thanh toán tạm gián đoạn trong vài mili-giây, thread không bị giữ, và service chết có thời gian hồi phục vì không còn bị dội request. Dấu hiệu nhận ra mạch đang thiếu là thời gian phản hồi của API mình tăng đúng bằng timeout của dependency dù dependency đã chết hẳn.",
       "map": "Hệ thống đặt hàng > Tầng tích hợp > Resilience > Circuit breaker, kề bên API thanh toán, timeout, fallback cho người dùng, và metric tỉ lệ lỗi",
       "connects": [
         {
-          "t": "Timeout",
+          "t": "Circuit breaker chỉ nhảy vào được khi đã có timeout để đếm lỗi: không có timeout thì request treo chứ không được tính là lỗi, nên mạch không bao giờ có đủ tín hiệu để mở.",
           "day": 18
         },
         {
-          "t": "Retry + backoff + jitter",
+          "t": "Retry và circuit breaker là hai lớp đối nghịch phải phối hợp: retry cố gọi lại để tự khỏi, còn circuit breaker cố ngừng gọi để cả hai phía hồi phục, và mạch mở chính là tín hiệu dừng retry vô ích.",
           "day": 18
         },
         {
-          "t": "Failure mode khi service chết giữa chừng",
+          "t": "Khi service chết giữa chừng, bảng failure mode phải ghi rõ mạch mở thì user thấy gì và ai xử lý tiếp, vì circuit breaker mà không có fallback và không có ca failure mode đi kèm thì user chỉ thấy lỗi chung chung.",
           "day": 20
         },
         {
-          "t": "Khả năng chịu lỗi của toàn bộ hệ thống"
+          "t": "Khả năng chịu lỗi của toàn bộ hệ thống tăng lên nhờ circuit breaker theo cách mà timeout một mình không làm được: timeout giới hạn thiệt hại của từng request, còn circuit breaker giới hạn thiệt hại của cả một đợt lỗi kéo dài."
         }
-      ]
+      ],
+      "shape": "trace",
+      "difficulty": 2,
+      "thresholds": "Ví dụ cấu hình trong tài liệu ngày 18: tỉ lệ lỗi vượt 50% trên cửa sổ 10 request gần nhất thì mở mạch 30 giây, trong 30 giây đó mọi request trả fallback ngay; sau 30 giây cho một vài request thăm dò ở trạng thái half-open, thành công thì đóng mạch lại.",
+      "dontUse": "Không dùng circuit breaker mà không có fallback rõ ràng cho user, và không dùng nó cho lỗi sai dữ liệu 400: mở mạch không sửa được dữ liệu sai, chỉ làm cho mọi request hợp lệ cũng bị chặn theo.",
+      "quiz": {
+        "q": "Mạch đang ở trạng thái open, một user bấm thanh toán ngay lúc đó. Hệ thống có gọi tới service payment không, user thấy gì, và khi nào hệ thống mới thử gọi lại?",
+        "answer": "Không gọi tới payment, user thấy ngay thông báo thanh toán tạm gián đoạn và được hướng dẫn thử lại sau. Hệ thống chỉ thử gọi lại sau thời gian nguội 30 giây, bằng một vài request thăm dò ở trạng thái half-open.",
+        "why": "Trạng thái open tồn tại để ngừng việc gọi vô ích vào service đã chết; việc thử lại chỉ diễn ra có kiểm soát ở half-open, không phải bằng cách cho mọi request tiếp tục dội vào."
+      }
     },
     {
-      "what": "Bulkhead là vách ngăn tài nguyên: chia pool riêng cho từng dependency để một dependency chậm không ăn hết thread của tất cả. Rate limiter là giới hạn tốc độ request theo client hoặc theo dependency, quá giới hạn thì từ chối rõ ràng. Bản chất chung của hai cơ chế này là khoanh vùng thiệt hại, để lỗi ở một chỗ không lan thành lỗi của mọi chỗ.",
-      "role": "Chúng giải quyết việc một dependency chậm hoặc một client quét API làm nghẽn cho mọi người khác. Nếu dùng chung một pool cho mọi dependency, chỉ cần thanh toán chậm là cả email và các tính năng khác cũng chậm theo. Triệu chứng cụ thể là một service chậm làm mọi tính năng chậm theo, hoặc một client quét API làm người dùng khác không gọi được.",
+      "what": "Bulkhead (vách ngăn tàu thủy: ngăn nước từ khoang thủng tràn sang khoang khác) là cách chia tài nguyên riêng cho từng dependency: mỗi dependency có pool thread hoặc connection riêng, một dependency chậm chỉ ăn hết phần của nó. Rate limiter (giới hạn tốc độ) là cách giới hạn số request trong một khoảng thời gian theo client hoặc theo dependency, quá giới hạn thì từ chối rõ ràng bằng 429 (mã trạng thái quá nhiều request) kèm header Retry-After (báo client nên chờ bao lâu rồi thử lại). Hai cơ chế này khác nhau: bulkhead khoanh vùng theo dependency, rate limiter khoanh vùng theo tốc độ.",
+      "role": "Dùng chung một pool cho mọi dependency thì chỉ cần thanh toán chậm là cả email và các tính năng khác cũng chậm theo: pool chung 40 thread, payment chậm chiếm hết 40 thread đang chờ, request gửi email tới sau phải xếp hàng dù service email hoàn toàn khỏe. Tách pool riêng, ví dụ payment 20 thread và email 20 thread, thì payment chậm nhất cũng chỉ ăn hết 20 của nó, email vẫn còn 20 để chạy. Tương tự, một client quét API với hàng nghìn request mỗi phút sẽ chiếm hết tài nguyên của mọi user khác nếu không có rate limiter chặn nó ở mức 100 request mỗi phút.",
       "map": "Hệ thống đặt hàng > Tầng tích hợp > Resilience > Vách ngăn và giới hạn tốc độ, kề bên pool riêng cho thanh toán, pool riêng cho email, rate limiter theo client, và thread pool chung",
       "connects": [
         {
-          "t": "Circuit breaker (Resilience4j)",
+          "t": "Circuit breaker chặn việc gọi vào một service đã chết, còn bulkhead chặn việc một service chậm ăn hết tài nguyên của các service khác, nên hai cơ chế này bổ sung cho nhau: một cái chặn theo lỗi, một cái chặn theo tài nguyên.",
           "day": 18
         },
         {
-          "t": "Timeout",
+          "t": "Timeout giới hạn thời gian giữ thread của từng request, còn bulkhead giới hạn số thread mà một dependency được giữ, nên timeout mà không có bulkhead thì một dependency chậm vẫn có thể chiếm toàn bộ pool bằng nhiều request cùng lúc.",
           "day": 18
         },
         {
-          "t": "Thread pool có giới hạn và chính sách từ chối",
+          "t": "Thread pool có giới hạn và chính sách từ chối là nền tảng của bulkhead: bulkhead chính là việc chia một pool chung thành nhiều pool nhỏ có chính sách từ chối riêng cho từng dependency.",
           "day": 15
         },
         {
-          "t": "Tính công bằng và ổn định của toàn bộ hệ thống"
+          "t": "Tính công bằng và ổn định của toàn bộ hệ thống phụ thuộc vào hai cơ chế này: không có chúng thì một dependency chậm hoặc một client tham lam cũng đủ làm mọi user khác chậm theo dù lỗi không nằm ở phần của họ."
         }
-      ]
+      ],
+      "shape": "compare",
+      "difficulty": 2,
+      "thresholds": "Ví dụ trong tài liệu ngày 18: pool riêng cho payment 20 thread và cho email 20 thread thay vì một pool chung 40 thread; rate limiter mỗi client tối đa 100 request mỗi phút, quá giới hạn thì trả 429 kèm Retry-After.",
+      "dontUse": "Không dùng chung một pool cho mọi dependency khi một trong số đó có thể chậm, và không dùng rate limiter thay cho phân quyền: trả 429 cho client vượt tốc độ khác với trả 403 cho client không có quyền, và nhầm hai mã này sẽ làm frontend xử lý sai.",
+      "quiz": {
+        "q": "Pool chung 40 thread, payment chậm đang chiếm hết 40 thread. Một request gửi email tới lúc đó sẽ gặp chuyện gì, và nếu tách pool thành payment 20 và email 20 thì request email đó gặp chuyện gì khác?",
+        "answer": "Với pool chung, request email phải xếp hàng hoặc timeout dù service email hoàn toàn khỏe, vì không còn thread trống. Với pool tách riêng, request email dùng 20 thread của email và chạy bình thường, vì phần tài nguyên của email không bị payment chiếm.",
+        "why": "Bulkhead khoanh vùng thiệt hại theo dependency: lỗi ở một khoang chỉ ngập đúng khoang đó, các khoang còn lại vẫn nổi."
+      }
     }
   ],
-  "19": [
+  "19":   [
     {
-      "what": "CAP nói rằng khi mạng chia cắt, hệ thống phải chọn giữa nhất quán và khả dụng, không thể có cả hai cùng lúc. PACELC bổ sung rằng khi mạng bình thường, hệ thống vẫn phải đánh đổi giữa độ trễ và nhất quán. Bản chất của cặp này là mọi hệ phân tán đều phải chọn, và lựa chọn đó nên khác nhau theo từng tính năng chứ không phải một lựa chọn cho tất cả.",
-      "role": "Nó giải quyết ảo tưởng rằng hệ thống có thể luôn nhất quán, luôn khả dụng và luôn nhanh cùng lúc. Nếu không chọn rõ, thiết kế sẽ hứa điều không thể và lỗi chỉ lộ khi mạng chia cắt thật. Triệu chứng cụ thể là khi mạng chia cắt, hệ thống hoặc dừng nhận ghi mà không ai lường trước, hoặc nhận ghi rồi dữ liệu hai phía lệch nhau mà không có kế hoạch hòa hợp.",
+      "what": "CAP là định lý về hệ phân tán khi mạng chia cắt (network partition: hai phía của hệ thống không liên lạc được với nhau): hệ thống không thể cùng lúc có Consistency (nhất quán: mọi node đọc đều thấy cùng dữ liệu mới nhất), Availability (khả dụng: mọi request đều nhận được trả lời, không phải chờ hay bị từ chối) và Partition tolerance (chịu chia cắt). Vì chia cắt là chuyện chắc chắn sẽ xảy ra trong thực tế nên lựa chọn thật chỉ còn lại C hay A trong lúc chia cắt. PACELC bổ sung vế còn lại: Else (khi mạng bình thường, không chia cắt) thì hệ thống vẫn phải chọn giữa Latency (độ trễ thấp) và Consistency (nhất quán cao).",
+      "role": "Không chọn rõ thì thiết kế sẽ hứa điều không thể và lỗi chỉ lộ khi mạng chia cắt thật: hai datacenter mất liên lạc, user ở phía A ghi số dư mới, user ở phía B đọc ngay lúc đó, hệ thống hoặc phải từ chối phía B (chọn C, mất A) hoặc trả số cũ cho phía B (chọn A, mất C), không có phương án thứ ba nào cho cả hai cùng đúng cùng lúc. Dấu hiệu nhận ra thiết kế chưa chọn là tài liệu hứa mọi tính năng đều vừa nhất quán vừa khả dụng vừa nhanh, và khi sự cố chia cắt xảy ra thì đội trực mới tranh cãi nên dừng nhận ghi hay cứ nhận ghi rồi hòa hợp sau.",
       "map": "Hệ thống đặt hàng > Tầng kiến trúc > Consistency > Lựa chọn CAP và PACELC, kề bên bản sao dữ liệu, cơ chế đồng bộ, tính năng ví, và tính năng feed",
       "connects": [
         {
-          "t": "Strong consistency",
+          "t": "Strong consistency là một đầu của lựa chọn CAP: chọn nó nghĩa là chấp nhận từ chối hoặc chờ đợi trong lúc chia cắt để mọi lần đọc đều thấy mới nhất, và cái giá đó chỉ đáng trả cho những tính năng mà sai là mất tiền.",
           "day": 19
         },
         {
-          "t": "Eventual consistency",
+          "t": "Eventual consistency là đầu còn lại của lựa chọn CAP: chọn nó nghĩa là chấp nhận cửa sổ đọc cũ để hệ thống vẫn trả lời trong lúc chia cắt và đọc nhanh khi mạng bình thường, và cái giá đó chỉ chấp nhận được ở tính năng mà chậm vài giây không gây thiệt hại.",
           "day": 19
         },
         {
-          "t": "Saga cần eventual consistency để chạy nhiều bước",
+          "t": "Saga chạy được chính vì nó chấp nhận lựa chọn eventual của CAP: các bước của saga khớp dần theo thời gian thay vì đòi mọi service thấy cùng một trạng thái ngay lập tức như một transaction chung.",
           "day": 17
         },
         {
-          "t": "Thiết kế hệ phân tán của toàn bộ hệ thống"
+          "t": "Thiết kế hệ phân tán của toàn bộ hệ thống không bắt đầu bằng việc chọn một mức nhất quán cho tất cả, mà bắt đầu bằng việc chọn khác nhau cho từng tính năng dựa trên thiệt hại khi đọc cũ và thiệt hại khi bị từ chối."
         }
-      ]
+      ],
+      "shape": "definition",
+      "difficulty": 3,
+      "dontUse": "Không dùng một lựa chọn CAP duy nhất cho mọi tính năng: ví tiền chọn nhất quán, feed bài viết chọn khả dụng, và ép cả hai dùng chung một mức sẽ làm một trong hai tính năng trả giá vô ích.",
+      "quiz": {
+        "q": "Mạng chia cắt hai phía A và B. Một hệ thống tuyên bố: trong lúc chia cắt, cả hai phía vẫn nhận ghi bình thường và mọi lần đọc sau ghi đều thấy dữ liệu mới nhất. Tuyên bố này vi phạm CAP ở chỗ nào?",
+        "answer": "Vi phạm vì trong lúc chia cắt không thể vừa khả dụng ở cả hai phía vừa nhất quán: phía B không liên lạc được với phía A nên không thể biết giá trị mới nhất mà phía A vừa ghi, trừ khi phía B từ chối trả lời.",
+        "why": "CAP nói rằng khi đã chia cắt thì phải hy sinh một trong hai: hoặc từ chối để giữ nhất quán, hoặc trả dữ liệu có thể cũ để giữ khả dụng; hứa cả hai là hứa điều không thể."
+      }
     },
     {
-      "what": "Strong consistency nghĩa là sau khi ghi xong, mọi lần đọc sau đều thấy dữ liệu mới nhất, không có cửa sổ đọc dữ liệu cũ. Để làm được điều đó, hệ thống phải đồng bộ mạnh trước khi trả lời, nên đọc chậm hơn và khó mở rộng hơn. Bản chất của nó là ưu tiên đúng ngay lập tức hơn là nhanh và dễ scale.",
-      "role": "Nó giải quyết những nơi sai là mất tiền, như số dư ví: đọc ra số cũ sau khi trừ sẽ khiến người dùng trừ tiếp và làm âm ví. Nếu đòi strong cho mọi thứ, hệ thống sẽ chậm và khó scale một cách vô ích ở những tính năng không cần. Triệu chứng cụ thể là số dư đọc ra cũ ngay sau khi trừ, hoặc hệ thống chậm hẳn chỉ vì áp mức nhất quán mạnh cho cả feed và danh sách.",
+      "what": "Strong consistency (nhất quán mạnh) nghĩa là sau khi một lần ghi được xác nhận thành công, mọi lần đọc sau đó, từ bất kỳ node nào, đều thấy giá trị mới nhất, không có cửa sổ nào đọc được giá trị cũ. Để giữ lời hứa đó, hệ thống phải đồng bộ trước khi trả lời, ví dụ hỏi đủ đa số bản sao (quorum: số bản sao tối thiểu phải đồng ý thì ghi mới được coi là thành công) hoặc khóa dữ liệu liên quan trong lúc ghi, nên đọc và ghi đều chậm hơn và khó mở rộng hơn.",
+      "role": "Nơi cần strong là nơi đọc cũ gây thiệt hại thật: ví có 100.000 đồng, trừ 30.000 đồng xong mà lần đọc ngay sau đó vẫn thấy 100.000 đồng thì user trừ tiếp 30.000 đồng nữa và ví bị chi tiêu vượt số dư thật. Nơi không cần strong mà vẫn áp strong thì hệ thống chậm và khó scale một cách vô ích: feed bài viết và danh sách sản phẩm mà cũng bắt mọi lần đọc phải đồng bộ đa số bản sao thì mỗi lần tải feed đều chậm lại dù chậm vài giây chẳng làm ai mất tiền. Dấu hiệu nhận ra strong đang bị lạm dụng là latency tăng đều ở mọi tính năng, kể cả những tính năng mà user không hề cần dữ liệu mới nhất từng giây.",
       "map": "Hệ thống đặt hàng > Tầng kiến trúc > Consistency > Nhất quán mạnh, kề bên bảng số dư ví, transaction mạnh, cơ chế lock, và bản sao dữ liệu đồng bộ",
       "connects": [
         {
-          "t": "CAP và PACELC",
+          "t": "Strong consistency là cách cụ thể hóa một đầu của lựa chọn CAP: nó trả lời câu hỏi khi mạng chia cắt thì hệ thống sẽ từ chối hay chờ đợi thay vì trả dữ liệu cũ, và câu trả lời đó là từ chối hoặc chờ.",
           "day": 19
         },
         {
-          "t": "Causal consistency",
+          "t": "Causal consistency yếu hơn strong ở chỗ nó chỉ giữ thứ tự nguyên nhân chứ không hứa mọi lần đọc đều mới nhất, nên một hệ thống chỉ cần giữ thứ tự hiển thị mà áp strong thì đang trả giá đồng bộ cho một lời hứa mà nó không cần.",
           "day": 19
         },
         {
-          "t": "Pessimistic lock cho trừ tiền ví",
+          "t": "Trừ tiền ví mà muốn giữ strong thì không thể thiếu lock: pessimistic lock giữ dòng số dư từ lúc đọc tới lúc ghi để không có hai lần trừ nào chen vào giữa, và lock đó chính là một phần của cái giá mà strong phải trả.",
           "day": 13
         },
         {
-          "t": "Tính đúng đắn của tiền trong toàn bộ hệ thống"
+          "t": "Tính đúng đắn của tiền trong toàn bộ hệ thống phụ thuộc vào việc giữ strong đúng chỗ: giữ strong ở ví thì tiền không lệch, giữ strong ở mọi nơi thì hệ thống chậm tới mức user bỏ đi trước khi tiền kịp lệch."
         }
-      ]
+      ],
+      "shape": "compare",
+      "difficulty": 2,
+      "dontUse": "Không dùng strong consistency cho feed, danh sách hay bất kỳ tính năng nào mà đọc cũ vài giây không gây thiệt hại: lúc đó strong chỉ làm hệ thống chậm hơn và khó scale hơn mà không cứu được đồng tiền nào.",
+      "quiz": {
+        "q": "Hệ thống tuyên bố dùng strong consistency cho số dư ví, nhưng một replica chưa kịp đồng bộ vẫn trả số dư cũ cho request đọc tới nó. Hệ thống đó thật sự đang giữ strong hay đã rơi xuống mức khác, và để giữ đúng strong thì request đọc đó phải làm gì?",
+        "answer": "Nó đã rơi xuống eventual: strong không cho phép lần đọc nào thấy cũ sau khi ghi đã xác nhận. Để giữ đúng strong, request đọc phải chờ đồng bộ xong hoặc đọc từ node chính đã có giá trị mới, chứ không được trả số cũ từ replica chưa đồng bộ.",
+        "why": "Lời hứa của strong là mọi lần đọc sau ghi đều mới, không có ngoại lệ cho replica chậm; một lần trả cũ là lời hứa đã vỡ, dù các lần đọc khác vẫn mới."
+      }
     },
     {
-      "what": "Eventual consistency nghĩa là sau khi ghi, dữ liệu sẽ khớp sau một lúc, nhưng ngay sau khi ghi người khác có thể đọc dữ liệu cũ. Khoảng thời gian đó gọi là cửa sổ không nhất quán, và hệ thống phải nói rõ cho người dùng cũng như xử lý trong code. Bản chất của nó là chấp nhận chậm khớp một chút để đổi lấy tốc độ và khả năng mở rộng.",
-      "role": "Nó giải quyết việc scale cho những tính năng mà chậm vài giây không gây thiệt hại, như feed bài viết. Nếu không nói rõ cửa sổ này, người dùng sẽ tưởng bài đăng bị mất và code sẽ sai vì giả định đọc sau ghi luôn thấy mới. Triệu chứng cụ thể là vừa đăng bài xong mà bạn bè chưa thấy ngay, hoặc vừa đặt hàng xong mà trang lịch sử đơn chưa hiện đơn.",
+      "what": "Eventual consistency (nhất quán cuối cùng) nghĩa là sau khi ghi, các bản sao sẽ khớp với nhau sau một lúc, nhưng ngay sau khi ghi thì người khác vẫn có thể đọc được dữ liệu cũ. Khoảng thời gian giữa lúc ghi và lúc mọi nơi thấy mới gọi là cửa sổ không nhất quán, và hệ thống phải nói rõ cửa sổ này cho user cũng như xử lý nó trong code. Hình dung giống như tin tức lan ra các chi nhánh: trụ sở biết trước, chi nhánh biết sau vài phút, và cuối cùng mọi chi nhánh đều biết cùng một tin.",
+      "role": "Eventual là lựa chọn đúng cho những tính năng mà chậm vài giây không gây thiệt hại: đăng bài lúc 10:00:00, bạn ở bản sao khác thấy bài lúc 10:00:04 thì không ai mất tiền; đặt hàng xong mà trang lịch sử đơn chưa hiện đơn trong vài giây đầu thì user chỉ cần thấy dòng đang xử lý thay vì tưởng đơn đã mất. Ngược lại, không nói rõ cửa sổ này thì user tưởng bài đăng bị mất và code sai vì giả định đọc sau ghi luôn thấy mới: ví dụ code vừa tạo đơn xong đã truy vấn danh sách đơn để kiểm tra và kết luận đơn chưa tạo, rồi tạo thêm một đơn nữa. Cache cũng là một dạng eventual: dữ liệu trong cache là cũ cho tới khi hết TTL (thời gian sống) hoặc bị invalidate (xóa hiệu lực).",
       "map": "Hệ thống đặt hàng > Tầng kiến trúc > Consistency > Nhất quán cuối cùng, kề bên feed bài viết, bản sao dữ liệu đồng bộ sau, cache, và trang lịch sử đơn hàng",
       "connects": [
         {
-          "t": "CAP và PACELC",
+          "t": "Eventual là một đầu của lựa chọn CAP, và chọn nó nghĩa là đã chấp nhận đánh đổi: hệ thống vẫn trả lời trong lúc chia cắt và đọc nhanh khi mạng bình thường, đổi lại là có cửa sổ đọc cũ phải quản lý.",
           "day": 19
         },
         {
-          "t": "Strong consistency",
+          "t": "Strong consistency là đối trọng trực tiếp của eventual: nơi nào eventual chấp nhận đọc cũ thì strong cấm đọc cũ, nên hai mức này không dùng lẫn được mà phải chọn theo thiệt hại khi đọc cũ của từng tính năng.",
           "day": 19
         },
         {
-          "t": "Cache cũng là một dạng eventual consistency",
+          "t": "Cache là eventual thu nhỏ trong một service: dữ liệu cache cũ cho tới khi hết hạn giống như bản sao chưa đồng bộ, nên mọi bài toán invalidate của cache cũng là bài toán thu hẹp cửa sổ không nhất quán.",
           "day": 12
         },
         {
-          "t": "Trải nghiệm người dùng trong toàn bộ sản phẩm khi dữ liệu chưa kịp khớp"
+          "t": "Trải nghiệm người dùng trong toàn bộ sản phẩm khi dữ liệu chưa kịp khớp phụ thuộc vào cách hệ thống nói về cửa sổ này: hiện đang xử lý thì user chờ, hiện không có đơn thì user tưởng mất và tạo lại."
         }
-      ]
+      ],
+      "shape": "analogy",
+      "difficulty": 1,
+      "thresholds": "Không có ngưỡng chuẩn chung cho cửa sổ không nhất quán: ngưỡng là cửa sổ tối đa mà chính tính năng đó chấp nhận, ví dụ feed và lịch sử đơn chấp nhận vài giây, còn số dư ví thì không chấp nhận giây nào và vì vậy không được dùng eventual.",
+      "dontUse": "Không dùng eventual cho số dư ví hay tồn kho chốt đơn, nơi một lần đọc cũ cũng đủ gây trừ vượt: lúc đó phải dùng strong hoặc lock, không được an ủi bằng chuyện dữ liệu rồi sẽ khớp sau.",
+      "quiz": {
+        "q": "User vừa đặt hàng xong, vào trang lịch sử đơn không thấy đơn và kết luận hệ thống bị bug. Kết luận đó đã đủ căn cứ chưa, và bạn kiểm tra thêm điều gì trước khi kết luận?",
+        "answer": "Chưa đủ: có thể đơn đang trong cửa sổ không nhất quán, tức là đã ghi nhưng danh sách chưa kịp đồng bộ. Kiểm tra thêm bằng cách đợi vài giây rồi tải lại, và truy vấn trực tiếp đơn theo id thay vì chỉ nhìn danh sách, vì danh sách và chi tiết có thể đồng bộ khác thời điểm.",
+        "why": "Trong hệ eventual, không thấy trong danh sách ngay sau ghi là hành vi bình thường trong cửa sổ, không phải bằng chứng của bug; chỉ khi quá cửa sổ mà vẫn không thấy thì mới là lỗi thật."
+      }
     },
     {
-      "what": "Causal consistency nghĩa là các sự kiện có quan hệ nguyên nhân phải được thấy theo đúng thứ tự đó. Bình luận phải hiện sau bài viết mà nó trả lời, câu trả lời phải hiện sau câu hỏi. Bản chất của nó là giữ thứ tự nguyên nhân, dù không yêu cầu mọi người thấy mọi thứ cùng một lúc như strong consistency.",
-      "role": "Nó giải quyết việc thứ tự hiển thị bị đảo làm người dùng khó hiểu, dù từng sự kiện riêng lẻ đều đã tới nơi. Nếu hệ eventual mà không giữ causal, người dùng có thể thấy bình luận trước khi thấy bài gốc. Triệu chứng cụ thể là reply hiện trước câu hỏi, hoặc bình luận hiện trước bài viết gốc, khiến cuộc hội thoại đọc không ra nghĩa.",
+      "what": "Causal consistency (nhất quán nguyên nhân) nghĩa là các sự kiện có quan hệ nguyên nhân phải được mọi người thấy theo đúng thứ tự đó: bình luận phải hiện sau bài viết mà nó trả lời, câu trả lời phải hiện sau câu hỏi. Causal không yêu cầu mọi người thấy mọi thứ cùng một lúc như strong, và cũng không yêu cầu mọi lần đọc đều mới nhất: nó chỉ giữ thứ tự giữa những sự kiện có liên quan nguyên nhân với nhau.",
+      "role": "Eventual thuần mà không giữ causal sẽ cho user thấy bình luận trước khi thấy bài gốc, và cuộc hội thoại đọc không ra nghĩa dù từng sự kiện riêng lẻ đều đã tới nơi: ví dụ bài gốc đăng 10:00, bình luận trả lời đăng 10:01, nhưng bản sao mà user đang đọc nhận được bình luận trước bài gốc nên hiển thị một câu trả lời trơ trọi không có câu hỏi. Causal sửa đúng chỗ này: nó bắt bản sao phải chờ bài gốc tới trước rồi mới hiện bình luận, dù các sự kiện không liên quan khác vẫn có thể hiện theo thứ tự bất kỳ. Dấu hiệu nhận ra causal đang thiếu là reply hiện trước câu hỏi, hoặc bình luận hiện trước bài viết gốc, trong khi dữ liệu thì không hề mất.",
       "map": "Hệ thống đặt hàng > Tầng kiến trúc > Consistency > Thứ tự nguyên nhân, kề bên feed và bình luận, hàng đợi event, bản sao dữ liệu, và cơ chế sắp xếp theo quan hệ nguyên nhân",
       "connects": [
         {
-          "t": "Eventual consistency",
+          "t": "Causal là lớp bổ sung trên nền eventual: eventual cho phép khớp chậm, còn causal bắt trong sự khớp chậm đó thì thứ tự nguyên nhân vẫn phải đúng, nên hai mức này đi cùng nhau chứ không thay thế nhau.",
           "day": 19
         },
         {
-          "t": "CAP và PACELC",
+          "t": "Lựa chọn CAP và PACELC là khung để quyết định có cần causal hay không: khi đã chọn eventual để đổi lấy tốc độ và khả dụng thì causal là cách giữ cho trải nghiệm không vỡ dù dữ liệu tới chậm.",
           "day": 19
         },
         {
-          "t": "Kafka giữ thứ tự trong một partition",
+          "t": "Kafka giữ thứ tự trong một partition chính là một cách triển khai causal cho các event cùng một key: các event của cùng một đơn đi qua cùng một partition nên tới đích theo đúng thứ tự chúng được ghi.",
           "day": 16
         },
         {
-          "t": "Tính mạch lạc của nội dung trong toàn bộ sản phẩm"
+          "t": "Tính mạch lạc của nội dung trong toàn bộ sản phẩm phụ thuộc vào causal nhiều hơn vào tốc độ: một cuộc hội thoại hiện đúng thứ tự dù chậm vài giây vẫn đọc được, còn hiện sai thứ tự dù nhanh thì vẫn khó hiểu."
         }
-      ]
+      ],
+      "shape": "trace",
+      "difficulty": 2,
+      "dontUse": "Không dùng causal thay cho strong khi cần mọi người thấy cùng một giá trị mới nhất ngay lập tức, ví dụ số dư ví: causal chỉ giữ thứ tự, không giữ tính mới nhất, nên đọc sau ghi vẫn có thể thấy cũ dù thứ tự đã đúng.",
+      "quiz": {
+        "q": "Hai bình luận độc lập, không trả lời nhau, hiển thị đảo thứ tự cho một user. Đó có phải là vi phạm causal consistency không, và trường hợp nào mới thật sự vi phạm?",
+        "answer": "Không vi phạm, vì hai bình luận độc lập không có quan hệ nguyên nhân nên thứ tự giữa chúng không bị ràng buộc. Vi phạm thật sự là khi một câu trả lời hiện trước câu hỏi mà nó trả lời, hoặc bình luận hiện trước bài viết gốc mà nó bình luận.",
+        "why": "Causal chỉ ràng buộc thứ tự giữa các sự kiện có quan hệ nguyên nhân; các sự kiện độc lập có thể tới theo bất kỳ thứ tự nào mà vẫn giữ đúng causal."
+      }
     }
   ],
-  "20": [
+  "20":   [
     {
-      "what": "Failure mode là một ca lỗi được mô tả đầy đủ: chuyện gì xảy ra, người dùng thấy gì, dữ liệu ở trạng thái gì, ai sửa và sửa bằng gì, phát hiện từ log hoặc metric nào. Một bảng failure mode là tập hợp các ca như vậy cho những lỗi đã lường trước. Bản chất của nó là biến sự cố từ chuyện đoán mò thành chuyện tra bảng và làm theo.",
-      "role": "Nó giải quyết việc lúc sự cố thật xảy ra, không ai biết phải làm gì dù lỗi đã từng được nghĩ tới. Nếu bảng chỉ ghi lỗi hiếm khi xảy ra mà không có cách phát hiện và cách sửa, lúc 2 giờ sáng đội trực vẫn phải đoán. Triệu chứng cụ thể là sự cố kéo dài vì mỗi người xử lý một kiểu, hoặc cùng một ca lỗi lặp lại mà lần nào cũng xử lý như lần đầu.",
+      "what": "Failure mode (chế độ lỗi) là một ca lỗi được mô tả đầy đủ bằng 5 mục: chuyện gì xảy ra, user thấy gì, dữ liệu ở trạng thái gì, ai sửa và sửa bằng gì, phát hiện từ log hoặc metric nào. Một bảng failure mode là tập hợp các ca như vậy cho những lỗi đã lường trước, để lúc sự cố thật xảy ra đội trực tra bảng và làm theo thay vì đoán.",
+      "role": "Bảng chỉ ghi lỗi mà không có cách phát hiện và cách sửa thì lúc 2 giờ sáng đội trực vẫn phải đoán: ví dụ ca service kho chết giữa chừng được ghi chung chung là hiếm khi xảy ra, nhưng khi nó xảy ra thật thì không ai biết user đang thấy gì, dữ liệu đang ở trạng thái nào và ai chịu trách nhiệm sửa. Ca viết đầy đủ thì khác: user thấy dòng đang xử lý đơn, dữ liệu là đơn PAID nhưng kho chưa trừ, người sửa là saga bù hoàn tiền và hủy đơn hoặc nhân viên xử lý tay nếu hàng đã giao, và phát hiện bằng alert tỉ lệ đơn PAID không có trừ kho. Dấu hiệu nhận ra bảng đang yếu là cùng một ca lỗi lặp lại mà lần nào đội trực cũng xử lý như lần đầu, vì lần trước không để lại cách sửa nào dùng được.",
       "map": "Hệ thống đặt hàng > Tầng vận hành > Bảng failure mode, kề bên alert theo metric, log và trace, quy trình bù của saga, và người trực chịu trách nhiệm sửa",
       "connects": [
         {
-          "t": "Drill",
+          "t": "Một ca trong bảng chỉ đáng tin khi nó đã được drill: drill là cách kiểm chứng xem cách sửa ghi trong bảng có thật sự chạy hay không, chứ không phải tin rằng ghi ra là sẽ chạy.",
           "day": 20
         },
         {
-          "t": "Xóa giả định nguy hiểm",
+          "t": "Bảng failure mode là nơi ghi lại kết quả của việc rà soát giả định: mỗi giả định nguy hiểm bị gạch bỏ sẽ sinh ra ít nhất một ca trong bảng, kèm theo cơ chế phát hiện và sửa tương ứng.",
           "day": 20
         },
         {
-          "t": "Circuit breaker và fallback cho service chết",
+          "t": "Khi service chết giữa chừng, circuit breaker và fallback là những gì user thấy đầu tiên, nên ca failure mode cho trường hợp này phải ghi rõ mạch mở thì fallback trả gì, chứ không chỉ ghi chung là service chết.",
           "day": 18
         },
         {
-          "t": "Khả năng ứng phó sự cố của toàn bộ hệ thống"
+          "t": "Khả năng ứng phó sự cố của toàn bộ hệ thống được đo bằng thời gian từ lúc alert kêu tới lúc đơn về trạng thái cuối đúng, và bảng failure mode đầy đủ là thứ rút ngắn thời gian đó từ hàng giờ xuống hàng phút."
         }
-      ]
+      ],
+      "shape": "definition",
+      "difficulty": 1,
+      "thresholds": "Ví dụ ca trong tài liệu ngày 20: alert khi tỉ lệ đơn PAID không có trừ kho vượt 1% trong 5 phút; một ca không có ngưỡng metric và thời gian duy trì như vậy thì chưa đủ để alert kêu đúng lúc.",
+      "dontUse": "Không dùng bảng failure mode mà ca nào cũng chỉ ghi hiếm khi xảy ra và không có cách phát hiện cùng người sửa: ca như vậy lúc sự cố thật vẫn bắt đội trực đoán, và bảng đó chỉ có tác dụng trang trí.",
+      "quiz": {
+        "q": "Một ca trong bảng ghi đủ 4 mục: chuyện gì xảy ra, user thấy gì, dữ liệu ở trạng thái gì, phát hiện từ metric nào, nhưng thiếu mục ai sửa và sửa bằng gì. Lúc sự cố thật xảy ra lúc 2 giờ sáng, thiếu sót này gây hậu quả cụ thể gì?",
+        "answer": "Không ai chịu trách nhiệm sửa và không có quy trình sửa để làm theo, nên mỗi người trực xử lý một kiểu, sự cố kéo dài, và có thể hai người cùng sửa ngược nhau trên cùng một đơn.",
+        "why": "Bốn mục đầu chỉ giúp hiểu sự cố, còn mục ai sửa và sửa bằng gì mới biến hiểu biết thành hành động; thiếu nó thì bảng chỉ là tài liệu mô tả, không phải quy trình ứng phó."
+      }
     },
     {
-      "what": "Drill là việc giả lập một ca lỗi thật trong môi trường an toàn rồi ghi lại kết quả thật, sau đó so với kỳ vọng. Nếu kết quả khác kỳ vọng thì sửa thiết kế, không sửa kỳ vọng cho khớp kết quả. Bản chất của nó là kiểm chứng bằng hành động thay vì tin rằng thiết kế trên giấy sẽ chạy đúng khi lỗi thật.",
-      "role": "Nó giải quyết việc bảng failure mode và cơ chế bù chỉ tồn tại trên giấy mà chưa bao giờ chạy. Nếu drill làm cho có và ghi đạt dù bù không chạy, drill giả còn nguy hiểm hơn không drill vì tạo cảm giác an toàn sai. Triệu chứng cụ thể là sự cố thật xảy ra và cơ chế bù không chạy, dù tài liệu khẳng định nó đã được thiết kế.",
+      "what": "Drill (diễn tập lỗi) là việc giả lập một ca lỗi thật trong môi trường an toàn, thường là staging, rồi ghi lại kết quả thật và so với kỳ vọng. Nếu kết quả khác kỳ vọng thì sửa thiết kế, không sửa kỳ vọng cho khớp kết quả. Drill khác với việc đọc lại thiết kế ở chỗ nó tạo ra bằng chứng chạy thật: cơ chế bù có chạy không, user thấy gì, dữ liệu về trạng thái nào.",
+      "role": "Bảng failure mode và cơ chế bù mà chưa bao giờ chạy thì chỉ tồn tại trên giấy, và drill giả còn nguy hiểm hơn không drill vì nó tạo cảm giác an toàn sai: tài liệu khẳng định bù đã được thiết kế, nhưng sự cố thật xảy ra thì bù không chạy và không ai biết vì chưa ai thử. Ví dụ drill trong tài liệu: tắt service kho 5 phút ở staging, đặt 10 đơn, ghi lại bao nhiêu đơn kẹt, bù có chạy không, user thấy gì; nếu bù chỉ chạy cho 7 trên 10 đơn mà người viết sửa kỳ vọng thành 7 trên 10 thì drill đã bị biến thành thủ tục cho có. Dấu hiệu nhận ra drill giả là báo cáo drill nào cũng ghi đạt mà không có con số đo và không có thay đổi thiết kế nào sau đó.",
       "map": "Hệ thống đặt hàng > Tầng vận hành > Drill lỗi phân tán, kề bên môi trường staging, bảng failure mode, cơ chế bù của saga, và metric ghi kết quả drill",
       "connects": [
         {
-          "t": "Failure mode",
+          "t": "Drill kiểm chứng trực tiếp từng ca trong bảng failure mode, nên một ca chưa từng được drill thì trong bảng vẫn chỉ là dự đoán, và drill là thứ biến dự đoán đó thành bằng chứng.",
           "day": 20
         },
         {
-          "t": "Xóa giả định nguy hiểm",
+          "t": "Sau mỗi drill, danh sách giả định nguy hiểm phải được rà lại: drill nào lộ ra một giả định vỡ thì giả định đó bị gạch và thay bằng cơ chế cụ thể, chứ không được giữ lại với lý do lần này chỉ là diễn tập.",
           "day": 20
         },
         {
-          "t": "Saga và hành động bù cần được drill",
+          "t": "Saga và hành động bù là đối tượng drill quan trọng nhất, vì bù là cơ chế chỉ chạy khi có lỗi, và cơ chế chỉ chạy khi có lỗi mà không được drill thì lần đầu tiên nó chạy cũng chính là lần sự cố thật.",
           "day": 17
         },
         {
-          "t": "Độ tin cậy đã được chứng minh của toàn bộ hệ thống"
+          "t": "Độ tin cậy đã được chứng minh của toàn bộ hệ thống khác với độ tin cậy trên giấy ở đúng một điểm: đã được chứng minh nghĩa là đã có drill với kết quả đo được, còn trên giấy nghĩa là mới chỉ có thiết kế."
         }
-      ]
+      ],
+      "shape": "incident",
+      "difficulty": 1,
+      "thresholds": "Ví dụ drill trong tài liệu ngày 20: tắt service kho 5 phút ở staging, đặt 10 đơn, đếm số đơn kẹt và số lần bù chạy thành công; drill không có con số đo như vậy thì chỉ là diễn tập miệng, không phải bằng chứng.",
+      "dontUse": "Không dùng drill trên production bằng cách tắt service thật khi chưa có cơ chế cô lập và rollback: drill diễn ra ở staging hoặc môi trường an toàn trước, và chỉ lên production khi đã có cách giới hạn ảnh hưởng tới user thật.",
+      "quiz": {
+        "q": "Drill đặt 10 đơn khi tắt kho cho kết quả bù chạy thành công 7 trên 10 đơn, trong khi kỳ vọng là 10 trên 10. Người viết báo cáo sửa kỳ vọng thành 7 trên 10 để báo cáo ghi đạt. Hành động đó đúng hay sai, và hành động đúng là gì?",
+        "answer": "Sai. Hành động đúng là giữ kỳ vọng 10 trên 10, điều tra vì sao 3 đơn còn lại bù không chạy, sửa thiết kế rồi drill lại cho tới khi đạt kỳ vọng thật.",
+        "why": "Drill tồn tại để phát hiện thiết kế sai, nên sửa kỳ vọng cho khớp kết quả là xóa bằng chứng duy nhất cho thấy thiết kế đang sai."
+      }
     },
     {
-      "what": "Xóa giả định nguy hiểm là rà lại thiết kế và gạch bỏ những giả định như message không trùng, mạng không lỗi, service luôn sống, database không bao giờ chậm. Mỗi giả định bị gạch phải được thay bằng một cơ chế cụ thể như dedup, timeout, retry, circuit breaker, fallback hoặc alert. Bản chất của nó là thiết kế cho điều kiện xấu, chứ không phải thiết kế cho demo khi mọi thứ đều tốt.",
-      "role": "Nó giải quyết việc thiết kế chỉ đúng khi mọi thứ đều tốt, nên sập ngay khi một giả định vỡ. Nếu giữ giả định nguy hiểm, lỗi sẽ không được xử lý mà chỉ được hy vọng là không xảy ra. Triệu chứng cụ thể là hệ thống chạy tốt ở demo nhưng lỗi dây chuyền trong production ngay khi có một service chậm hoặc một message trùng đầu tiên.",
+      "what": "Xóa giả định nguy hiểm là rà lại toàn bộ thiết kế và gạch bỏ những câu bắt đầu bằng hệ thống sẽ luôn hoặc sẽ không bao giờ: message không trùng, mạng không lỗi, service luôn sống, database không bao giờ chậm. Mỗi giả định bị gạch phải được thay bằng một cơ chế cụ thể: message không trùng thì thay bằng dedup, mạng không lỗi thì thay bằng timeout và retry, service luôn sống thì thay bằng circuit breaker và fallback, database chậm thì thay bằng alert và bulkhead. Giả định nào không thay được bằng cơ chế thì phải thay bằng quy trình xử lý tay và người chịu trách nhiệm.",
+      "role": "Thiết kế chỉ đúng khi mọi thứ đều tốt sẽ sập ngay khi một giả định vỡ: hệ thống chạy tốt ở demo vì demo không có consumer restart, không có mạng chập và không có service chậm, nhưng production có đủ cả ba ngay trong tuần đầu. Giả định message không trùng vỡ ngay lần consumer restart đầu tiên và làm điểm bị trừ hai lần; giả định service luôn sống vỡ ngay lần payment chậm đầu tiên và làm pool thread đầy dần. Dấu hiệu nhận ra thiết kế còn giả định nguy hiểm là trong tài liệu thiết kế có những câu như Kafka không trùng đâu, mạng nội bộ không lỗi đâu, service này không bao giờ chết đâu, mà phía sau những câu đó không có cơ chế nào.",
       "map": "Hệ thống đặt hàng > Tầng vận hành > Rà soát giả định, kề bên bảng failure mode, cơ chế dedup, timeout và circuit breaker, và alert phát hiện lỗi",
       "connects": [
         {
-          "t": "Failure mode",
+          "t": "Mỗi giả định bị gạch bỏ sẽ sinh ra ít nhất một ca trong bảng failure mode, vì vậy bảng failure mode đầy đủ hay không phản ánh trực tiếp việc rà soát giả định đã kỹ hay chưa.",
           "day": 20
         },
         {
-          "t": "Drill",
+          "t": "Drill là cách kiểm tra việc gạch giả định có thật hay không: giả định nào vẫn còn trong code sẽ lộ ra ngay khi drill giả lập đúng điều kiện mà giả định đó phủ nhận.",
           "day": 20
         },
         {
-          "t": "Idempotent consumer thay cho giả định message không trùng",
+          "t": "Giả định message không trùng là ví dụ điển hình nhất, và cơ chế thay thế nó là idempotent consumer: thay vì hy vọng broker không giao trùng, consumer tự bảo vệ mình bằng dedup.",
           "day": 16
         },
         {
-          "t": "Tư duy thiết kế cho production của toàn bộ hệ thống"
+          "t": "Tư duy thiết kế cho production của toàn bộ hệ thống khác với tư duy thiết kế cho demo ở đúng điểm này: thiết kế cho production bắt đầu bằng việc liệt kê điều xấu có thể xảy ra, còn thiết kế cho demo bắt đầu bằng việc giả định điều xấu sẽ không xảy ra."
         }
-      ]
+      ],
+      "shape": "incident",
+      "difficulty": 2,
+      "dontUse": "Không dùng giả định làm lý do để bỏ cơ chế phòng thủ cho luồng tiền và kho: nơi giả định vỡ là nơi mất tiền thật, nên càng là luồng quan trọng thì càng không được phép giữ giả định mà không có cơ chế thay thế.",
+      "quiz": {
+        "q": "Một thiết kế viết: Kafka không trùng đâu nên consumer không cần dedup. Hãy chỉ ra giả định nguy hiểm trong câu đó, giải thích vì sao nó vỡ, và nêu cơ chế thay thế.",
+        "answer": "Giả định nguy hiểm là message không trùng. Nó vỡ vì Kafka và mọi broker at-least-once đều có thể giao lại sau khi consumer xử lý xong nhưng crash trước khi ack hoặc commit offset. Cơ chế thay thế là idempotent consumer với dedup key lưu cùng transaction với tác dụng nghiệp vụ.",
+        "why": "Broker chỉ hứa giao ít nhất một lần chứ không hứa đúng một lần, nên mọi thiết kế dựa trên lời hứa trùng không xảy ra đều sẽ vỡ ngay lần redelivery đầu tiên."
+      }
     }
   ],
   "21": [

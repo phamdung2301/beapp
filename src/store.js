@@ -4,7 +4,29 @@ const KEY = 'beapp-v1'
 
 // Tương thích ngược: state cũ (chỉ có done/scores/notes/...) vẫn đọc được,
 // các trường mới được merge mặc định, không xóa dữ liệu cũ.
-const DEFAULTS = { done: {}, scores: {}, notes: {}, criteria: {}, review: {}, capstone: {}, flashKnown: {}, startDate: '', reminder: '07:00', pomodoroDone: 0, pomodoroMinutes: 0, srs: {}, noteUndo: {}, notesSavedAt: {}, pomodoroInterrupted: 0, lastView: null }
+const DEFAULTS = { done: {}, scores: {}, notes: {}, criteria: {}, review: {}, capstone: {}, flashKnown: {}, startDate: '', reminder: '07:00', pomodoroDone: 0, pomodoroMinutes: 0, srs: {}, noteUndo: {}, notesSavedAt: {}, pomodoroInterrupted: 0, lastView: null, srs2: {}, labDone: {}, labNotes: {}, mastery: {}, teachBack: {}, llm: { endpoint: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.3-70b-versatile', key: '' } }
+
+// SM-2 (Wozniak 1987): khoảng ôn giãn theo lịch sử thật thay vì +1/+3 cố định.
+// known (q=4): ease giữ nguyên, interval 1 → 6 → interval*ease; unknown (q=1): reset về 1 ngày, lapses+1.
+export function sm2Next(prev, known) {
+  const r = prev || { ease: 2.5, interval: 0, reps: 0, lapses: 0 }
+  if (!known) return { ease: r.ease, interval: 1, reps: 0, lapses: r.lapses + 1, status: 'unknown' }
+  let interval
+  if (r.reps === 0) interval = 1
+  else if (r.reps === 1) interval = 6
+  else interval = Math.max(1, Math.round(r.interval * r.ease))
+  return { ease: r.ease, interval, reps: r.reps + 1, lapses: r.lapses, status: 'known' }
+}
+
+// Mức thông thạo suy ra từ bằng chứng, không phải tick: đã đọc → luyện được → giải thích được.
+// "Giải thích được" cần: ≥2 lần đúng giãn cách + 1 lab đạt + 1 bản teach-back (khuyến khích, không bắt buộc cho điểm 5).
+export function masteryLevel(m) {
+  if (!m) return 'chưa học'
+  if (m.teachBack && m.labOk && (m.okCount || 0) >= 2) return 'giải thích được'
+  if ((m.okCount || 0) >= 1 || m.labOk) return 'luyện được'
+  if (m.tries > 0) return 'đã đọc'
+  return 'chưa học'
+}
 
 export function loadState() {
   try {

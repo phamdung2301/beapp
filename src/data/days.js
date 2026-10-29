@@ -116,7 +116,7 @@ export const DAYS = [
   { id: 9, week: 2, title: 'JPA/Hibernate và Transaction', goal: 'Biết transaction bắt đầu và kết thúc ở đâu, và vì sao code "chạy được" vẫn sinh dữ liệu rác.',
     concepts: [
       { t: 'Lazy vs eager', d: 'Eager bừa thì tải cả đồ thị không cần thiết.' },
-      { t: 'N+1 query', d: '1 query lấy danh sách, rồi N query lấy từng item con. Danh sách càng dài càng chậm theo cấp số nhân.' },
+      { t: 'N+1 query', d: '1 query lấy danh sách, rồi N query lấy từng item con. Danh sách càng dài càng chậm tuyến tính theo số dòng (1 + N query).' },
       { t: 'Transaction boundary', d: '@Transactional đặt ở service, không đặt ở controller hay repository lẻ. Rollback xảy ra với exception nào, không rollback với exception nào nếu không cấu hình.' },
       { t: 'Lưu cha trước, con sau', d: 'Lưu cha trước lấy ID rồi mới lưu con khi có khóa ngoại; backend tự tính lại giá/tổng tiền, không tin số frontend gửi.' },
     ],

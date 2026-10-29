@@ -2,8 +2,9 @@ import React, { useMemo, useState, useEffect, useRef } from 'react'
 import { DAYS, WEEKS, REVIEW_CHECKLIST, CAPSTONE_RUBRIC } from './data/days.js'
 import { DAY_EXTRA } from './data/dayExtra.js'
 import { CONCEPT_EXPLAIN } from './data/conceptExplain.js'
-import { useProgress, useReveal, streakOf, addDays, todayStr } from './store.js'
+import { useProgress, useReveal, streakOf, addDays, todayStr, sm2Next, masteryLevel } from './store.js'
 import { LogSimulator, SpecCalculator, MisconceptionCorner } from './components/Day1Interactive.jsx'
+import { LabView, QuizBox, TeachBackBox } from './components/Labs.jsx'
 
 export function enrichDay(day) {
   const ex = DAY_EXTRA[day.id]
@@ -23,16 +24,51 @@ function dayProgress(s, day) {
   const ticked = day.criteria.filter((_, i) => s.criteria?.[day.id]?.[i]).length
   return { notesCount, ticked, totalCriteria: day.criteria.length, inProgress: notesCount > 0 || ticked > 0 }
 }
-function reviewDue(s) {
+function buildReviewQueue(s) {
   const today = todayStr()
-  const out = []
+  const byKey = new Map()
+  const push = (key, item) => { if (!byKey.has(key)) byKey.set(key, item) }
+  // SM-2 mới được ưu tiên; dữ liệu ôn cũ (srs) vẫn đọc được để không mất hẹn cũ.
+  ALL_DAYS.forEach(d => d.concepts.forEach((c, i) => {
+    const r = s.srs2?.[`${d.id}-${i}`]
+    if (r && r.due <= today) push(`c-${d.id}-${i}`, { day: d, concept: c, due: r.due, reason: r.status === 'unknown' ? 'Thẻ chưa thuộc, đến hạn ôn (SM-2)' : 'Đến hạn ôn (SM-2)', tab: 'flash' })
+  }))
   ALL_DAYS.forEach(d => d.concepts.forEach((c, i) => {
     const r = s.srs?.[`${d.id}-${i}`]
-    if (r && r.status === 'unknown' && r.due <= today) out.push({ day: d, concept: c, due: r.due, reason: 'Thẻ flashcard chưa thuộc, đến hạn ôn' })
+    if (r && r.status === 'unknown' && r.due <= today) push(`c-${d.id}-${i}`, { day: d, concept: c, due: r.due, reason: 'Thẻ flashcard chưa thuộc, đến hạn ôn', tab: 'flash' })
   }))
-  ALL_DAYS.forEach(d => { if (s.scores[d.id] !== undefined && s.scores[d.id] <= 2) out.push({ day: d, concept: null, due: null, reason: `Điểm tự chấm thấp (${s.scores[d.id]}/5)` }) })
-  ALL_DAYS.forEach(d => { const p = dayProgress(s, d); if (!s.done[d.id] && p.ticked < p.totalCriteria && p.inProgress) out.push({ day: d, concept: null, due: null, reason: `Còn ${p.totalCriteria - p.ticked} tiêu chí chưa tick` }) })
-  return out
+  ALL_DAYS.forEach(d => { if (s.scores[d.id] !== undefined && s.scores[d.id] <= 2) push(`d-${d.id}`, { day: d, concept: null, due: null, reason: `Điểm tự chấm thấp (${s.scores[d.id]}/5)`, tab: 'check' }) })
+  ALL_DAYS.forEach(d => { const p = dayProgress(s, d); if (!s.done[d.id] && p.ticked < p.totalCriteria && p.inProgress) push(`p-${d.id}`, { day: d, concept: null, due: null, reason: `Còn ${p.totalCriteria - p.ticked} tiêu chí chưa tick`, tab: 'do' }) })
+  // Thẻ mới gợi ý: khái niệm đầu tiên của ngày chưa xong mà chưa từng ôn.
+  const next = ALL_DAYS.find(d => !s.done[d.id])
+  if (next) {
+    const ni = next.concepts.findIndex((_, i) => !s.srs2?.[`${next.id}-${i}`] && !s.srs?.[`${next.id}-${i}`])
+    if (ni >= 0) push(`n-${next.id}`, { day: next, concept: next.concepts[ni], due: null, reason: 'Thẻ mới gợi ý hôm nay (chưa từng ôn)', tab: 'flash', isNew: true })
+  }
+  const arr = [...byKey.values()]
+  arr.sort((a, b) => {
+    if (!!a.isNew !== !!b.isNew) return a.isNew ? 1 : -1
+    if (!a.due && b.due) return 1
+    if (a.due && !b.due) return -1
+    if (a.due && b.due) return a.due < b.due ? -1 : 1
+    return 0
+  })
+  return arr
+}
+function masteryStats(s) {
+  let total = 0, ok = 0, explained = 0
+  const weak = []
+  ALL_DAYS.forEach(d => d.concepts.forEach((c, i) => {
+    total++
+    const m = s.mastery?.[`${d.id}-${i}`]
+    const lv = masteryLevel(m)
+    if (lv === 'luyện được' || lv === 'giải thích được') ok++
+    if (lv === 'giải thích được') explained++
+    const r = s.srs2?.[`${d.id}-${i}`]
+    if ((r?.lapses || 0) > 0 || s.srs?.[`${d.id}-${i}`]?.status === 'unknown') weak.push({ day: d, concept: c, lapses: r?.lapses || 0 })
+  }))
+  weak.sort((a, b) => b.lapses - a.lapses)
+  return { total, ok, explained, weak: weak.slice(0, 3) }
 }
 function fmtDate(iso) { if (!iso) return ''; const d = new Date(iso + 'T00:00:00'); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}` }
 function fmtTime(iso) { if (!iso) return ''; const d = new Date(iso); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
@@ -59,7 +95,8 @@ function Dashboard({ go, s }) {
   const next = ALL_DAYS.find(d => !s.done[d.id]) || ALL_DAYS[29]
   const scores = Object.values(s.scores)
   const avg = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '—'
-  const due = reviewDue(s)
+  const due = buildReviewQueue(s)
+  const ms = masteryStats(s)
   const exDone = ALL_DAYS.reduce((a, d) => a + dayProgress(s, d).notesCount, 0)
   const exTotal = ALL_DAYS.reduce((a, d) => a + d.exercises.length, 0)
   return <div>
@@ -71,14 +108,14 @@ function Dashboard({ go, s }) {
     </div></section>
     <div className="marquee" aria-hidden="true"><div>{'JVM · Spring Boot · REST · DTO · SQL · JPA · MongoDB · Redis · Kafka · Saga · Resilience · CAP · DDD · OAuth2 · Observability · Docker · Testing · ADR · '.repeat(3)}</div></div>
     <div className="grid">
-      <div className="card reveal"><Ring pct={pct} /><p><strong>{doneCount}/30 ngày đã xong · {exDone}/{exTotal} bài tập đã có ghi chú</strong><br /><span className="mut">Streak: {streakOf(s.done)} ngày · Điểm tự chấm trung bình: {avg}/5 · Pomodoro đã xong: {s.pomodoroDone || 0} phiên{s.pomodoroMinutes ? ` (${s.pomodoroMinutes} phút tập trung)` : ''}{s.pomodoroInterrupted ? `, ${s.pomodoroInterrupted} phiên dở` : ''}</span></p><div className="progress"><i style={{ width: pct + '%' }} /></div></div>
+      <div className="card reveal"><Ring pct={pct} /><p><strong>{doneCount}/30 ngày đã xong · {exDone}/{exTotal} bài tập đã có ghi chú</strong><br /><span className="mut">Streak: {streakOf(s.done)} ngày · Điểm tự chấm trung bình: {avg}/5 · Pomodoro đã xong: {s.pomodoroDone || 0} phiên{s.pomodoroMinutes ? ` (${s.pomodoroMinutes} phút tập trung)` : ''}{s.pomodoroInterrupted ? `, ${s.pomodoroInterrupted} phiên dở` : ''}</span></p><p className="mut">Thông thạo (từ quiz + lab + teach-back, không phải tick): {ms.ok}/{ms.total} khái niệm luyện được, trong đó {ms.explained} giải thích được.{ms.weak.length > 0 && <> Điểm yếu nhất: {ms.weak.map(w => `Ngày ${w.day.id} — ${w.concept.t}`).join('; ')}.</>}</p><div className="progress"><i style={{ width: pct + '%' }} /></div></div>
       <div className="card reveal"><div className="eyebrow">Hôm nay nên học</div><h3>Ngày {next.id} — {next.title}</h3><p className="mut">{next.goal}</p>
         {s.startDate && <p className="mut">Lịch của bạn: Ngày 1 = {fmtDate(s.startDate)}, Ngày 7 = {fmtDate(addDays(s.startDate, 6))}, Ngày 30 = {fmtDate(addDays(s.startDate, 29))}.</p>}
         <button className="btn small" onClick={() => go('day', next.id)}>Vào ngày này</button></div>
-      <div className="card reveal"><div className="eyebrow">Ôn lại hôm nay</div>
-        {due.length ? due.slice(0, 6).map((r, i) => <p key={i}>{r.concept ? `Ngày ${r.day.id} — ${r.concept.t} ` : `Ngày ${r.day.id} — ${r.day.title} `}<span className="mut">({r.reason}{r.due ? `, hẹn ${fmtDate(r.due)}` : ''})</span> <button className="btn ghost small" onClick={() => go('day', r.day.id, undefined, 'flash')}>Ôn</button></p>)
-          : <p className="mut">Chưa có thẻ nào đến hạn ôn. Đánh dấu thẻ là “Chưa thuộc” ở Flashcard thì mai nó sẽ hiện ở đây, kèm ngày hẹn ôn.</p>}
-      </div>
+      <div className="card reveal"><div className="eyebrow">Hôm nay ôn gì</div>
+        {due.length ? due.slice(0, 6).map((r, i) => <p key={i}>{r.concept ? `Ngày ${r.day.id} — ${r.concept.t} ` : `Ngày ${r.day.id} — ${r.day.title} `}<span className="mut">({r.reason}{r.due ? `, hẹn ${fmtDate(r.due)}` : ''})</span> <button className="btn ghost small" onClick={() => go('day', r.day.id, undefined, r.tab)}>Ôn</button></p>)
+          : <p className="mut">Chưa có thẻ nào đến hạn ôn. Đánh dấu thẻ là “Chưa thuộc” ở Flashcard thì nó sẽ hiện ở đây theo lịch SM-2.</p>}
+        <button className="btn ghost small" onClick={() => go('review')}>Xem tất cả →</button></div>
       <div className="card reveal"><div className="eyebrow">Cài app lên laptop</div><p>Mở web này bằng Chrome hoặc Edge, chọn Install app / Cài đặt ứng dụng. Biểu tượng sẽ xuất hiện ngoài desktop và taskbar, mở thành cửa sổ riêng và chạy offline.</p><button className="btn ghost small" onClick={() => go('settings')}>Hướng dẫn cài đặt</button></div>
     </div>
     <h2 style={{ marginTop: 28 }}>5 tuần, nhìn 1 lần là nhớ</h2>
@@ -98,8 +135,9 @@ function Highlight({ text, q }) {
   if (idx === -1) return text
   return <>{text.slice(0, idx)}<mark>{text.slice(idx, idx + q.length)}</mark>{text.slice(idx + q.length)}</>
 }
-function SearchView({ go, s }) {
-  const [q, setQ] = useState('')
+function SearchView({ go, s, initialQ }) {
+  const [q, setQ] = useState(initialQ || '')
+  useEffect(() => { setQ(initialQ || '') }, [initialQ])
   const res = useMemo(() => {
     if (q.trim().length < 2) return []
     const k = q.toLowerCase()
@@ -117,39 +155,67 @@ function SearchView({ go, s }) {
     <h3 style={{ marginTop: 24 }}>Thuật ngữ hay gặp</h3><p className="mut">Idempotency: gửi lại cùng 1 thao tác mà kết quả không đổi. Circuit Breaker: ngắt mạch khi service lỗi liên tục. Aggregate: ranh giới transaction và invariant trong DDD. Outbox: ghi event cùng transaction với dữ liệu nghiệp vụ rồi gửi sau. N+1: 1 query lấy danh sách rồi N query lấy từng item con.</p></div>
 }
 
+function ReviewView({ go, s }) {
+  const today = todayStr()
+  const q = buildReviewQueue(s)
+  const overdue = q.filter(r => r.due && r.due < today)
+  const dueToday = q.filter(r => r.due === today)
+  const rest = q.filter(r => !r.due || r.due > today)
+  const Row = ({ r }) => <div className="card" style={{ marginTop: 12 }}>
+    <div className="eyebrow">Ngày {r.day.id}{r.isNew ? ' · Thẻ mới' : ''}</div>
+    <p><strong>{r.concept ? r.concept.t : r.day.title}</strong> <span className="mut">({r.reason}{r.due ? `, hẹn ${fmtDate(r.due)}` : ''})</span></p>
+    <div className="row">
+      <button className="btn small" onClick={() => go('day', r.day.id, undefined, r.tab)}>{r.tab === 'flash' ? 'Ôn flashcard' : r.tab === 'check' ? 'Tự chấm lại' : 'Làm tiếp'}</button>
+      <button className="btn ghost small" onClick={() => go('day', r.day.id, undefined, 'lab')}>Làm lab →</button>
+      <button className="btn ghost small" onClick={() => go('day', r.day.id, undefined, 'explain')}>Đọc giải thích →</button>
+    </div>
+  </div>
+  return <div><h2>Hôm nay ôn gì</h2><p className="mut">Hàng đợi ôn tập toàn app: quá hạn lên trước, trộn nhiều ngày, không còn chuyện muốn ôn ngày 3 thì phải tự mò vào đúng ngày 3. Lịch hẹn theo SM-2 (1 → 6 → giãn dần theo lịch sử), dữ liệu ôn cũ vẫn giữ nguyên.</p>
+    <h3>Quá hạn ({overdue.length})</h3>{overdue.length ? overdue.map((r, i) => <Row key={i} r={r} />) : <p className="mut">Không có mục quá hạn. Tốt.</p>}
+    <h3>Đến hạn hôm nay ({dueToday.length})</h3>{dueToday.length ? dueToday.map((r, i) => <Row key={i} r={r} />) : <p className="mut">Hôm nay chưa có mục đến hạn.</p>}
+    <h3>Cần làm tiếp / sắp tới ({rest.length})</h3>{rest.map((r, i) => <Row key={i} r={r} />)}
+  </div>
+}
+
 function mdPreview(text) {
   const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   return esc.replace(/^### (.*)$/gm, '<h4>$1</h4>').replace(/^## (.*)$/gm, '<h3>$1</h3>').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/^- (.*)$/gm, '<li>$1</li>').replace(/\n/g, '<br/>')
 }
-function ExplainView({ day, go }) {
+const SHAPE_LABEL = { trace: 'Trace từng bước', decision: 'Cây quyết định', compare: 'Bảng so sánh', incident: 'Câu chuyện sự cố', analogy: 'Analogy', definition: 'Định nghĩa nền' }
+function ExplainView({ day, go, s, patch }) {
   const [q, setQ] = useState('')
-  const [openAll, setOpenAll] = useState(true)
+  const [openSet, setOpenSet] = useState(() => new Set())
   const explains = CONCEPT_EXPLAIN[day.id] || []
   const k = q.trim().toLowerCase()
   const items = day.concepts.map((c, i) => ({ c, e: explains[i], i })).filter(({ c, e }) => {
     if (!k) return true
-    return (c.t + ' ' + (e?.what || '') + ' ' + (e?.role || '') + ' ' + (e?.map || '')).toLowerCase().includes(k)
+    return (c.t + ' ' + (e?.what || '') + ' ' + (e?.role || '') + ' ' + (e?.map || '') + ' ' + (e?.dontUse || '') + ' ' + (e?.thresholds || '')).toLowerCase().includes(k)
   })
+  const toggle = (i) => setOpenSet(prev => { const n = new Set(prev); if (n.has(i)) n.delete(i); else n.add(i); return n })
   return <div style={{ marginTop: 16 }}>
     <div className="card"><h3>Giải thích khái niệm — Ngày {day.id}: {day.title}</h3>
-      <p className="mut">Mỗi khái niệm có đủ 4 phần: nó là gì, nhiệm vụ là gì, nằm ở đâu trong bản đồ gần đó, và kết nối với khái niệm khác như thế nào. Bấm vào nút ngày ở phần kết nối để nhảy tới ngày đó và vẫn ở tab Giải thích này. Vào ngày từ Dashboard/Timeline thì app về tab Học theo cơ chế cũ; chuyển ngày bằng nút Ngày trước/sau trong trang này thì giữ nguyên tab Giải thích.</p>
+      <p className="mut">Mỗi khái niệm render theo dạng của nó (trace, cây quyết định, bảng so sánh, câu chuyện sự cố, analogy), không còn khuôn 4 phần bắt buộc. Mỗi khái niệm thu gọn mặc định — mở từng cái, đọc xong thì làm câu hỏi kiểm tra hiểu và viết lại bằng lời của bạn (khuyến khích, không bắt buộc). Bấm vào nút ngày ở phần kết nối để nhảy tới ngày đó và vẫn ở tab Giải thích này.</p>
       <input style={{ width: '100%', padding: 12 }} placeholder="Tìm khái niệm trong ngày này, ví dụ: heap, token, saga…" value={q} onChange={e => setQ(e.target.value)} />
       <p className="mut">{items.length}/{day.concepts.length} khái niệm {k ? `khớp “${q}”` : 'trong ngày này'}{explains.length !== day.concepts.length ? ` — cảnh báo: dữ liệu giải thích có ${explains.length} mục, không khớp ${day.concepts.length} khái niệm.` : ''}</p>
-      <div className="row"><button className="btn ghost small" onClick={() => setOpenAll(true)}>Mở tất cả</button><button className="btn ghost small" onClick={() => setOpenAll(false)}>Thu tất cả</button></div>
+      <div className="row"><button className="btn ghost small" onClick={() => setOpenSet(new Set(day.concepts.map((_, i) => i)))}>Mở tất cả</button><button className="btn ghost small" onClick={() => setOpenSet(new Set())}>Thu tất cả</button>{k && <button className="btn ghost small" onClick={() => go('search', undefined, undefined, undefined, q)}>Tìm “{q}” toàn app →</button>}</div>
     </div>
     {items.map(({ c, e, i }) => <div className="card" key={i} style={{ marginTop: 14 }}>
-      <h3>{i + 1}. {c.t}</h3>
+      <div className="row" style={{ justifyContent: 'space-between' }}><h3 style={{ margin: 0 }}>{i + 1}. {c.t}</h3><button className="btn ghost small" onClick={() => toggle(i)}>{openSet.has(i) ? 'Thu lại ↑' : 'Mở ↓'}</button></div>
+      {e && <p className="mut">{e.shape && <span className="tag">{SHAPE_LABEL[e.shape] || e.shape}</span>} {e.difficulty && <span className="tag">Độ khó {e.difficulty}/3</span>} <span className="tag">{masteryLevel(s.mastery?.[`${day.id}-${i}`])}</span></p>}
       {!e && <p className="warn">Chưa có giải thích cho khái niệm này.</p>}
-      {e && <details open={openAll}>
-        <summary><strong>Mở 4 phần giải thích</strong></summary>
+      {e && openSet.has(i) && <div>
         <p><strong>1. Nó là gì?</strong><br />{e.what}</p>
         <p><strong>2. Nhiệm vụ của nó là gì?</strong><br />{e.role}</p>
         <div className="banner" style={{ margin: '12px 0' }}><strong>3. Nó nằm ở đâu trong bản đồ gần đó?</strong><br />{e.map}</div>
-        <p><strong>4. Kết nối với các khái niệm khác như thế nào?</strong></p>
+        {e.thresholds && <div className="banner"><strong>Ngưỡng quyết định:</strong> {e.thresholds}</div>}
+        {e.dontUse && <div className="warn" style={{ marginTop: 12 }}><strong>Không dùng khi:</strong> {e.dontUse}</div>}
+        <p><strong>Kết nối với các khái niệm khác như thế nào?</strong></p>
         <ul>{e.connects.map((cn, j) => <li key={j}>{cn.t}{typeof cn.day === 'number' && <> <button className="btn ghost small" onClick={() => go('day', cn.day, undefined, 'explain')}>→ Ngày {cn.day}: {DAY_BY_ID[cn.day]?.title || ''}</button></>}</li>)}</ul>
-      </details>}
+        <QuizBox quiz={e.quiz} mKey={`${day.id}-${i}`} s={s} patch={patch} />
+        <TeachBackBox cKey={`${day.id}-${i}`} s={s} patch={patch} />
+      </div>}
     </div>)}
-    {items.length === 0 && <p className="mut">Không có khái niệm nào khớp với từ khóa này trong ngày {day.id}. Hãy thử từ khóa khác.</p>}
+    {items.length === 0 && <p className="mut">Không có khái niệm nào khớp với từ khóa này trong ngày {day.id}. Hãy thử từ khóa khác hoặc tìm toàn app.</p>}
   </div>
 }
 function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, setTab }) {
@@ -161,6 +227,7 @@ function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, 
   useEffect(() => { setOpenSet(new Set([0])) }, [day.id])
   useEffect(() => { patch({ lastView: { view: 'day', dayId: day.id, tab } }) }, [tab, day.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const pr = dayProgress(s, day)
+  const hasTeach = day.concepts.some((_, i) => s.teachBack?.[`${day.id}-${i}`])
   const showToast = (m) => { setToast(m); setTimeout(() => setToast(''), 3000) }
   const copyTemplate = async (text) => {
     try { await navigator.clipboard.writeText(text); showToast('Đã sao chép template.') }
@@ -178,6 +245,7 @@ function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, 
       <button className={tab === 'flash' ? 'btn small' : 'btn ghost small'} onClick={() => setTab('flash')}>Flashcard ôn tập</button>
       <button className={tab === 'check' ? 'btn small' : 'btn ghost small'} onClick={() => setTab('check')}>Tự chấm</button>
       <button className={tab === 'explain' ? 'btn small' : 'btn ghost small'} onClick={() => setTab('explain')}>Giải thích khái niệm</button>
+      <button className={tab === 'lab' ? 'btn small' : 'btn ghost small'} onClick={() => setTab('lab')}>Lab thực hành</button>
       <button className="btn ghost small" onClick={() => window.print()}>In / Lưu PDF ngày này</button>
     </div>
     {toast && <div className="banner" role="status">{toast}</div>}
@@ -219,7 +287,8 @@ function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, 
       {day.id === 30 && <div className="card"><h3>Rubric capstone (mỗi phần 0–2 điểm)</h3>{CAPSTONE_RUBRIC.map((c, i) => <div key={i}><label>{c.t} — {c.d}</label><select value={s.capstone?.[i] ?? ''} onChange={ev => patch({ capstone: { ...s.capstone, [i]: Number(ev.target.value) } })}><option value="">Chưa chấm</option><option value="0">0</option><option value="1">1</option><option value="2">2</option></select></div>)}<p><strong>Tổng: {Object.values(s.capstone || {}).reduce((a, b) => a + (Number(b) || 0), 0)}/10.</strong> Dưới 7 thì quay lại ngày yếu nhất và làm lại checkpoint tuần đó.</p></div>}
     </div>}
     {tab === 'flash' && <Flashcards key={day.id} day={day} s={s} patch={patch} />}
-    {tab === 'explain' && <ExplainView day={day} go={go} />}
+    {tab === 'explain' && <ExplainView day={day} go={go} s={s} patch={patch} />}
+    {tab === 'lab' && <LabView day={day} s={s} patch={patch} />}
     {tab === 'check' && <div className="card" style={{ marginTop: 16 }}><h3>Tự chấm ngày này</h3>
       {day.criteria.map((c, i) => <label key={i} style={{ fontWeight: 400 }}><input type="checkbox" checked={!!s.criteria?.[day.id]?.[i]} onChange={() => toggleList('criteria', day.id, i)} /> {c}</label>)}
       <p>Đã tick {pr.ticked}/{pr.totalCriteria} tiêu chí · Đã viết {pr.notesCount}/{day.exercises.length} bài tập.</p>
@@ -227,6 +296,7 @@ function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, 
       <label>Điểm tự chấm cho ngày này (0–5)</label>
       <select value={s.scores[day.id] ?? ''} onChange={ev => patch({ scores: { ...s.scores, [day.id]: Number(ev.target.value) } })}><option value="">Chưa chấm</option>{[0, 1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}</select>
       {s.scores[day.id] === 5 && pr.ticked === 0 && <p className="warn">Cảnh báo: bạn chọn 5 nhưng chưa tick tiêu chí nào. Hãy làm bài tập và tick tiêu chí trước, hoặc hạ điểm xuống cho đúng.</p>}
+      {s.scores[day.id] === 5 && pr.ticked > 0 && !hasTeach && <p className="mut">Gợi ý (không bắt buộc, không chặn điểm 5): điểm 5 nghĩa là "giải thích và bảo vệ được cho người khác" — thử viết 1 bản giải thích lại ở tab Giải thích khái niệm để tự kiểm chứng.</p>}
       <div className="row" style={{ marginTop: 14 }}><button className="btn" onClick={() => {
         if (!pr.inProgress && s.scores[day.id] === undefined) { if (!window.confirm('Bạn chưa có output hay tiêu chí nào. Bạn có chắc muốn đánh dấu xong không?')) return }
         setDone(day.id, true)
@@ -264,10 +334,11 @@ function Flashcards({ day, s, patch }) {
     return <div className="card" style={{ marginTop: 16 }}><h3>Đã ôn hết {day.concepts.length} thẻ</h3><p>{unknownIdx.length} thẻ chưa thuộc. Bấm dưới đây để ôn lại đúng các thẻ đó.</p><button className="btn" disabled={unknownIdx.length === 0} onClick={() => { setQueue(unknownIdx); setPos(0); setFlip(false); setDone(false) }}>Ôn lại các thẻ chưa thuộc</button> <button className="btn ghost" onClick={() => { setQueue(day.concepts.map((_, i) => i)); setPos(0); setFlip(false); setDone(false) }}>Ôn lại từ đầu</button></div>
   }
   if (!c) return null
-  const srs = s.srs?.[`${day.id}-${idx}`]
+  const srs = s.srs2?.[`${day.id}-${idx}`] || s.srs?.[`${day.id}-${idx}`]
   const mark = (known) => {
-    const due = known ? addDays(todayStr(), 3) : addDays(todayStr(), 1)
-    patch({ flashKnown: { ...s.flashKnown, [`${day.id}-${idx}`]: known }, srs: { ...s.srs, [`${day.id}-${idx}`]: { status: known ? 'known' : 'unknown', due } } })
+    const nxt = sm2Next(s.srs2?.[`${day.id}-${idx}`], known)
+    const due = addDays(todayStr(), nxt.interval)
+    patch({ flashKnown: { ...s.flashKnown, [`${day.id}-${idx}`]: known }, srs: { ...s.srs, [`${day.id}-${idx}`]: { status: known ? 'known' : 'unknown', due } }, srs2: { ...s.srs2, [`${day.id}-${idx}`]: { ...nxt, due } } })
     setTimeout(() => {
       setFlip(false)
       if (known) { if (pos + 1 >= queue.length) setDone(true); else setPos(pos + 1) }
@@ -280,7 +351,7 @@ function Flashcards({ day, s, patch }) {
     }, 300)
   }
   return <div style={{ marginTop: 16 }}>
-    <p className="mut">Thẻ {pos + 1}/{queue.length} · Bấm vào thẻ để lật, hoặc dùng phím Space/Enter để lật, phím mũi tên để chuyển thẻ. Thẻ chưa thuộc sẽ quay lại cuối hàng đợi trong phiên này và hẹn ôn vào ngày mai; thẻ đã thuộc hẹn ôn sau 3 ngày.</p>
+    <p className="mut">Thẻ {pos + 1}/{queue.length} · Bấm vào thẻ để lật, hoặc dùng phím Space/Enter để lật, phím mũi tên để chuyển thẻ. Thẻ chưa thuộc sẽ quay lại cuối hàng đợi trong phiên này và hẹn ôn sau 1 ngày; thẻ đã thuộc hẹn ôn theo SM-2 (1 → 6 → giãn dần).</p>
     <div className="flash" tabIndex={0} role="button" aria-label={`Thẻ flashcard: ${c.t}. Bấm Space hoặc Enter để lật.`} onClick={() => setFlip(!flip)} onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setFlip(!flip) } }}><div className={`flash-in ${flip ? 'flipped' : ''}`}>
       <div className="flash-face"><div className="eyebrow">Khái niệm</div><h3>{c.t}</h3><p className="mut">Bấm để xem giải thích</p></div>
       <div className="flash-face flash-back"><div className="eyebrow">Giải thích</div><p>{c.d}</p></div>
@@ -288,7 +359,7 @@ function Flashcards({ day, s, patch }) {
     <div className="row" style={{ marginTop: 12 }}><button className="btn ghost small" onClick={() => { setPos(Math.max(0, pos - 1)); setFlip(false) }}>← Thẻ trước</button><button className="btn small" onClick={() => { if (pos + 1 >= queue.length) setDone(true); else setPos(pos + 1); setFlip(false) }}>Thẻ sau →</button>
       <button className="btn small" onClick={() => mark(true)}>Đã thuộc ✓</button>
       <button className="btn ghost small" onClick={() => mark(false)}>Chưa thuộc, ôn lại</button></div>
-    <p className="mut">{srs ? `Ôn lại vào: ${fmtDate(srs.due)} (${srs.status === 'unknown' ? 'chưa thuộc' : 'đã thuộc'}).` : 'Chưa đánh dấu thẻ này.'} Phím tắt: ← → chuyển thẻ, Space/Enter lật thẻ.</p>
+    <p className="mut">{srs ? `Ôn lại vào: ${fmtDate(srs.due)} (${srs.status === 'unknown' ? 'chưa thuộc' : 'đã thuộc'}${srs.interval ? `, khoảng ${srs.interval} ngày` : ''}).` : 'Chưa đánh dấu thẻ này.'} Phím tắt: ← → chuyển thẻ, Space/Enter lật thẻ.</p>
   </div>
 }
 function Settings({ p }) {
@@ -308,6 +379,13 @@ function Settings({ p }) {
     <div className="card" style={{ marginTop: 14 }}><h3>3. Sao lưu tiến độ</h3><div className="row"><button className="btn small" onClick={exportJSON}>Xuất dữ liệu ra file JSON</button><label className="btn ghost small">Chọn file để nhập<input type="file" accept="application/json" hidden onChange={e => { if (e.target.files[0]) setPendingFile(e.target.files[0]); e.target.value = '' }} /></label><button className="btn ghost small" onClick={() => { if (window.confirm('Xóa toàn bộ tiến độ và ghi chú? Hành động này không hoàn tác được.')) clearAll() }}>Xóa toàn bộ dữ liệu</button></div>
       {pendingFile && <div className="warn" style={{ marginTop: 12 }}><strong>Nhập file “{pendingFile.name}” sẽ thay thế toàn bộ tiến độ hiện tại.</strong> Bạn đã xuất backup chưa?<div className="row" style={{ marginTop: 8 }}><button className="btn small" onClick={exportJSON}>Xuất backup trước</button><button className="btn" onClick={() => importJSON(pendingFile, (ok, data) => { if (ok) { const days = data?.done ? Object.keys(data.done).length : 0; const notes = data?.notes ? Object.values(data.notes).filter(Boolean).length : 0; setImportSummary(`Đã nhập xong: ${days} ngày xong, ${notes} ghi chú.`); setPendingFile(null) } else setImportSummary('File không đọc được, tiến độ cũ vẫn giữ nguyên.') })}>Nhập và thay thế</button><button className="btn ghost small" onClick={() => setPendingFile(null)}>Hủy</button></div></div>}
       {importSummary && <p>{importSummary}</p>}</div>
+    <div className="card" style={{ marginTop: 14 }}><h3>4. AI Tutor (tùy chọn, key của bạn)</h3>
+      <p className="mut">App không có key AI tích hợp sẵn và không gửi dữ liệu của bạn đi đâu. Nếu bạn có key Groq hoặc OpenAI, nhập vào đây để hỏi tutor ngay trong lab. Key chỉ lưu ở localStorage trên máy bạn.</p>
+      <label>Endpoint (tương thích OpenAI)</label><input style={{ width: '100%', padding: 12 }} value={s.llm?.endpoint || ''} onChange={e => patch({ llm: { ...s.llm, endpoint: e.target.value } })} />
+      <label>Model</label><input style={{ width: '100%', padding: 12 }} value={s.llm?.model || ''} onChange={e => patch({ llm: { ...s.llm, model: e.target.value } })} />
+      <label>API key</label><input type="password" style={{ width: '100%', padding: 12 }} value={s.llm?.key || ''} onChange={e => patch({ llm: { ...s.llm, key: e.target.value } })} placeholder="Dán key vào đây, không chia sẻ cho ai" />
+      <div className="row"><button className="btn ghost small" onClick={() => patch({ llm: { ...s.llm, key: '' } })}>Xóa key</button></div>
+      <p className="mut">Khi chưa có key, lab vẫn có nút Gợi ý viết sẵn — tutor chỉ là lớp hỗ trợ thêm.</p></div>
   </div>
 }
 export default function App() {
@@ -317,6 +395,7 @@ export default function App() {
   const [dayId, setDayId] = useState(() => s.lastView?.dayId || 1)
   const [dayTab, setDayTab] = useState(() => s.lastView?.tab || 'learn')
   const [timelineWeek, setTimelineWeek] = useState(0)
+  const [searchQ, setSearchQ] = useState('')
   const [update, setUpdate] = useState(false)
   const [pomo, setPomo] = useState({ sec: 25 * 60, duration: 25 * 60, run: false, started: false })
   const pomoRef = useRef(pomo); pomoRef.current = pomo
@@ -341,13 +420,12 @@ export default function App() {
   const day = DAY_BY_ID[dayId] || ALL_DAYS[0]
   useReveal(view + dayId)
   useEffect(() => { if (view !== 'day') patch({ lastView: { view, dayId } }) }, [view, dayId]) // eslint-disable-line react-hooks/exhaustive-deps
-  const go = (v, id, week, tab) => {
+  const go = (v, id, week, tab, q) => {
     if (id) setDayId(id)
     if (week !== undefined) setTimelineWeek(week)
-    // P2-03: vào ngày từ Dashboard/Timeline/Tìm kiếm thì về tab Học;
-    // chuyển ngày bằng prev/next trong trang ngày thì giữ nguyên tab đang chọn.
     if (tab) setDayTab(tab)
     else if (v === 'day' && view !== 'day') setDayTab('learn')
+    if (q !== undefined) setSearchQ(q)
     setView(v); window.scrollTo(0, 0)
   }
   const togglePomo = () => setPomo(prev => ({ ...prev, run: !prev.run, started: true }))
@@ -360,7 +438,7 @@ export default function App() {
   const setPomoDur = (dur) => setPomo(prev => ({ ...prev, sec: dur, duration: dur, run: false, started: false }))
   return <div>
     <header className="topbar"><div className="topbar-in"><div className="logo">BE<span>App</span> <small style={{ fontSize: 13, color: '#93a0be' }}>· 30 ngày Backend Senior</small></div>
-      <nav className="nav"><button className={view === 'home' ? 'on' : ''} onClick={() => go('home')}>Trang chính</button><button className={view === 'timeline' ? 'on' : ''} onClick={() => go('timeline')}>Timeline</button><button className={view === 'search' ? 'on' : ''} onClick={() => go('search')}>Tìm kiếm</button><button className={view === 'settings' ? 'on' : ''} onClick={() => go('settings')}>Cài đặt</button></nav>
+      <nav className="nav"><button className={view === 'home' ? 'on' : ''} onClick={() => go('home')}>Trang chính</button><button className={view === 'timeline' ? 'on' : ''} onClick={() => go('timeline')}>Timeline</button><button className={view === 'review' ? 'on' : ''} onClick={() => go('review')}>Hôm nay ôn gì</button><button className={view === 'search' ? 'on' : ''} onClick={() => go('search')}>Tìm kiếm</button><button className={view === 'settings' ? 'on' : ''} onClick={() => go('settings')}>Cài đặt</button></nav>
     </div></header>
     <main className="wrap view" key={view}>
       {(() => {
@@ -375,8 +453,9 @@ export default function App() {
       <Boundary onHome={() => go('home')}>
         {view === 'home' && <Dashboard go={go} s={s} />}
         {view === 'timeline' && <Timeline go={go} s={s} week={timelineWeek} setWeek={setTimelineWeek} />}
+        {view === 'review' && <ReviewView go={go} s={s} />}
         {view === 'day' && <DayView day={day} go={go} p={p} pomo={pomo} onTogglePomo={togglePomo} onResetPomo={resetPomo} onSetPomo={setPomoDur} tab={dayTab} setTab={setDayTab} />}
-        {view === 'search' && <SearchView go={go} s={s} />}
+        {view === 'search' && <SearchView go={go} s={s} initialQ={searchQ} />}
         {view === 'settings' && <Settings p={p} />}
       </Boundary>
       <footer>BEApp v1 · Nội dung từ lộ trình 30 ngày trong Google Doc "Theory domains for backend dev". Tiến độ lưu ở localStorage trên máy bạn, không gửi lên server. Mở bằng Chrome/Edge và Install app để dùng như app trên laptop.</footer>
