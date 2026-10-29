@@ -13,7 +13,7 @@ export const DAYS = [
   { id: 1, week: 1, title: 'JVM và Java 21', goal: 'Giải thích được một request chạy qua JVM ra sao, và khi nào app chậm dần hoặc chết vì bộ nhớ.',
     concepts: [
       { t: 'Heap, stack và vòng đời đối tượng', d: 'Đối tượng sống ngắn và sống dài tốn tài nguyên khác nhau. Tạo quá nhiều object ngắn hạn vẫn tốn GC.' },
-      { t: 'GC: G1 và ZGC', d: 'G1 cân bằng throughput, ZGC ưu tiên độ trễ thấp. Full GC làm đứng request.' },
+      { t: 'GC: G1 và ZGC', d: 'G1 chia heap thành region, có young/mixed/full GC; full GC của G1 là stop-the-world (đứng request). ZGC dùng colored pointers và load barriers, pause thường dưới mili-giây, đổi lấy chi phí CPU/bộ nhớ cao hơn — ZGC không có full GC stop-the-world kiểu G1. Chọn G1 khi cần cân bằng throughput, chọn ZGC khi độ trễ p99 quan trọng hơn chi phí CPU.' },
       { t: 'Java 21: Records, Sealed, Pattern Matching', d: 'Model rõ ràng hơn, ít boilerplate, ít lỗi sai kiểu.' },
       { t: 'Virtual Threads (Project Loom)', d: 'Thread nhẹ cho tác vụ chờ IO. Không sửa được code giữ lock lâu hoặc dùng shared state không an toàn.' },
     ],
@@ -26,7 +26,7 @@ export const DAYS = [
   { id: 2, week: 1, title: 'Spring Boot', goal: 'Hiểu vì sao app "chạy được" nhưng lại chạy sai môi trường, sai database.',
     concepts: [
       { t: 'Auto-configuration và starter', d: 'Boot tự cấu hình nhiều thứ. Khi nó đoán sai ý bạn, app vẫn chạy nhưng sai hành vi.' },
-      { t: 'Thứ tự ưu tiên config', d: 'Biến môi trường > file config > giá trị mặc định. Production không được phụ thuộc file local.' },
+      { t: 'Thứ tự ưu tiên config (giảm dần)', d: 'Command-line arguments > SPRING_APPLICATION_JSON > JVM system properties (thắng cả biến môi trường) > biến môi trường > application-{profile}.yml > application.yml > giá trị mặc định. Production không được phụ thuộc file local. Debug bằng --debug (conditions evaluation report) và validate bằng @ConfigurationProperties + @Validated để fail-fast thật sự.' },
       { t: 'Tên database phải tường minh', d: 'Driver MongoDB lặng lẽ dùng database "test" nếu URI không có tên DB. spring.data.mongodb.database thắng URI. "Chạy ngon nhưng sai dữ liệu" thì kiểm tra DB thật trước.' },
       { t: 'Fail-fast khi boot', d: 'Thiếu URI, thiếu secret thì app phải chết rõ ràng lúc boot, không chạy nửa vời.' },
     ],
@@ -38,7 +38,7 @@ export const DAYS = [
     trap: 'Agent thêm config vào application.yml nhưng quên env var production đang thắng nó; hoặc seed script fallback DB mặc định khiến dữ liệu vào nhầm DB.' },
   { id: 3, week: 1, title: 'Spring MVC, Filter và CORS', goal: 'Vẽ được vòng đời một request từ khi vào tới khi ra khỏi controller.',
     concepts: [
-      { t: 'DispatcherServlet và filter chain', d: 'Filter chain của Spring Security chạy trước controller, interceptor chạy ở tầng khác.' },
+      { t: 'DispatcherServlet, Filter và Interceptor', d: 'Servlet Filter chạy ở tầng servlet (FilterChainProxy/DelegatingFilterProxy, Security filter chain chạy trước mọi thứ, CorsFilter nằm trong chain này). HandlerInterceptor chạy sau khi DispatcherServlet chọn handler qua HandlerMapping, trước controller qua HandlerAdapter (preHandle), rồi postHandle và afterCompletion sau controller. Nhầm hai tầng này là nhầm vị trí kiểm tra và vị trí xử lý lỗi.' },
       { t: 'Preflight OPTIONS', d: 'Request này không mang token, không mang credentials. Nếu rule authenticated đứng trước, preflight bị chặn 403 trước khi tới CORS handler, browser hủy luôn request thật.' },
       { t: 'CORS ở tầng Security, không chỉ WebMvc', d: 'CORS cấu hình ở WebMvc chạy sau Security filter nên chỉ sửa ở đó là chưa đủ. Cách sửa: permitAll cho OPTIONS /** trước mọi rule, hoặc CorsConfigurationSource ở tầng security.' },
       { t: 'Phân biệt lỗi CORS, token và backend chết', d: 'Nhìn status, header access-control-allow-origin và log server, đừng đoán.' },
