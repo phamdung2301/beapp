@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react'
 import { DAYS, WEEKS, REVIEW_CHECKLIST, CAPSTONE_RUBRIC } from './data/days.js'
 import { DAY_EXTRA } from './data/dayExtra.js'
+import { CONCEPT_EXPLAIN } from './data/conceptExplain.js'
 import { useProgress, useReveal, streakOf, addDays, todayStr } from './store.js'
 import { LogSimulator, SpecCalculator, MisconceptionCorner } from './components/Day1Interactive.jsx'
 
@@ -120,6 +121,37 @@ function mdPreview(text) {
   const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   return esc.replace(/^### (.*)$/gm, '<h4>$1</h4>').replace(/^## (.*)$/gm, '<h3>$1</h3>').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/^- (.*)$/gm, '<li>$1</li>').replace(/\n/g, '<br/>')
 }
+function ExplainView({ day, go }) {
+  const [q, setQ] = useState('')
+  const [openAll, setOpenAll] = useState(true)
+  const explains = CONCEPT_EXPLAIN[day.id] || []
+  const k = q.trim().toLowerCase()
+  const items = day.concepts.map((c, i) => ({ c, e: explains[i], i })).filter(({ c, e }) => {
+    if (!k) return true
+    return (c.t + ' ' + (e?.what || '') + ' ' + (e?.role || '') + ' ' + (e?.map || '')).toLowerCase().includes(k)
+  })
+  return <div style={{ marginTop: 16 }}>
+    <div className="card"><h3>Giải thích khái niệm — Ngày {day.id}: {day.title}</h3>
+      <p className="mut">Mỗi khái niệm có đủ 4 phần: nó là gì, nhiệm vụ là gì, nằm ở đâu trong bản đồ gần đó, và kết nối với khái niệm khác như thế nào. Bấm vào nút ngày ở phần kết nối để nhảy tới ngày đó và vẫn ở tab Giải thích này. Vào ngày từ Dashboard/Timeline thì app về tab Học theo cơ chế cũ; chuyển ngày bằng nút Ngày trước/sau trong trang này thì giữ nguyên tab Giải thích.</p>
+      <input style={{ width: '100%', padding: 12 }} placeholder="Tìm khái niệm trong ngày này, ví dụ: heap, token, saga…" value={q} onChange={e => setQ(e.target.value)} />
+      <p className="mut">{items.length}/{day.concepts.length} khái niệm {k ? `khớp “${q}”` : 'trong ngày này'}{explains.length !== day.concepts.length ? ` — cảnh báo: dữ liệu giải thích có ${explains.length} mục, không khớp ${day.concepts.length} khái niệm.` : ''}</p>
+      <div className="row"><button className="btn ghost small" onClick={() => setOpenAll(true)}>Mở tất cả</button><button className="btn ghost small" onClick={() => setOpenAll(false)}>Thu tất cả</button></div>
+    </div>
+    {items.map(({ c, e, i }) => <div className="card" key={i} style={{ marginTop: 14 }}>
+      <h3>{i + 1}. {c.t}</h3>
+      {!e && <p className="warn">Chưa có giải thích cho khái niệm này.</p>}
+      {e && <details open={openAll}>
+        <summary><strong>Mở 4 phần giải thích</strong></summary>
+        <p><strong>1. Nó là gì?</strong><br />{e.what}</p>
+        <p><strong>2. Nhiệm vụ của nó là gì?</strong><br />{e.role}</p>
+        <div className="banner" style={{ margin: '12px 0' }}><strong>3. Nó nằm ở đâu trong bản đồ gần đó?</strong><br />{e.map}</div>
+        <p><strong>4. Kết nối với các khái niệm khác như thế nào?</strong></p>
+        <ul>{e.connects.map((cn, j) => <li key={j}>{cn.t}{typeof cn.day === 'number' && <> <button className="btn ghost small" onClick={() => go('day', cn.day, undefined, 'explain')}>→ Ngày {cn.day}: {DAY_BY_ID[cn.day]?.title || ''}</button></>}</li>)}</ul>
+      </details>}
+    </div>)}
+    {items.length === 0 && <p className="mut">Không có khái niệm nào khớp với từ khóa này trong ngày {day.id}. Hãy thử từ khóa khác.</p>}
+  </div>
+}
 function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, setTab }) {
   const { s, setDone, setNote, appendNote, undoNote, toggleList, patch } = p
   const prev = DAY_BY_ID[day.id - 1], next = DAY_BY_ID[day.id + 1]
@@ -145,6 +177,7 @@ function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, 
       <button className={tab === 'do' ? 'btn small' : 'btn ghost small'} onClick={() => setTab('do')}>Làm bài tập</button>
       <button className={tab === 'flash' ? 'btn small' : 'btn ghost small'} onClick={() => setTab('flash')}>Flashcard ôn tập</button>
       <button className={tab === 'check' ? 'btn small' : 'btn ghost small'} onClick={() => setTab('check')}>Tự chấm</button>
+      <button className={tab === 'explain' ? 'btn small' : 'btn ghost small'} onClick={() => setTab('explain')}>Giải thích khái niệm</button>
       <button className="btn ghost small" onClick={() => window.print()}>In / Lưu PDF ngày này</button>
     </div>
     {toast && <div className="banner" role="status">{toast}</div>}
@@ -186,6 +219,7 @@ function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, 
       {day.id === 30 && <div className="card"><h3>Rubric capstone (mỗi phần 0–2 điểm)</h3>{CAPSTONE_RUBRIC.map((c, i) => <div key={i}><label>{c.t} — {c.d}</label><select value={s.capstone?.[i] ?? ''} onChange={ev => patch({ capstone: { ...s.capstone, [i]: Number(ev.target.value) } })}><option value="">Chưa chấm</option><option value="0">0</option><option value="1">1</option><option value="2">2</option></select></div>)}<p><strong>Tổng: {Object.values(s.capstone || {}).reduce((a, b) => a + (Number(b) || 0), 0)}/10.</strong> Dưới 7 thì quay lại ngày yếu nhất và làm lại checkpoint tuần đó.</p></div>}
     </div>}
     {tab === 'flash' && <Flashcards key={day.id} day={day} s={s} patch={patch} />}
+    {tab === 'explain' && <ExplainView day={day} go={go} />}
     {tab === 'check' && <div className="card" style={{ marginTop: 16 }}><h3>Tự chấm ngày này</h3>
       {day.criteria.map((c, i) => <label key={i} style={{ fontWeight: 400 }}><input type="checkbox" checked={!!s.criteria?.[day.id]?.[i]} onChange={() => toggleList('criteria', day.id, i)} /> {c}</label>)}
       <p>Đã tick {pr.ticked}/{pr.totalCriteria} tiêu chí · Đã viết {pr.notesCount}/{day.exercises.length} bài tập.</p>
