@@ -102,3 +102,20 @@ mark{background:var(--acc);color:#07090f;border-radius:3px;padding:0 2px}
   .paper{background:#fff;color:#111}
   .wrap{max-width:none}
 }
+
+/* AI Gia sư bám bài: khung chat hội thoại gắn theo từng phần bài học */
+.chatbox{border:1px solid var(--line);border-radius:14px;background:var(--panel2);margin-top:12px;overflow:hidden}
+.chat-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
+.chat-tools{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+.chat-msgs{max-height:380px;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+.bubble{max-width:92%;padding:10px 12px;border-radius:12px;white-space:pre-wrap;font-size:14.5px;line-height:1.55}
+.bubble.user{align-self:flex-end;background:#31406b;border:1px solid #45568a}
+.bubble.ai{align-self:flex-start;background:var(--panel);border:1px solid var(--line)}
+.chat-input{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 10px}
+.chip{background:#1a2338;border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:5px 10px;font-size:13px;text-align:left}
+.chip:hover{border-color:var(--acc)}
+.pill{display:inline-block;background:#1a2338;border:1px solid var(--acc);color:var(--acc);border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700;white-space:nowrap}
+.typing{color:var(--mut);font-style:italic}
+.ai-review{margin-top:10px;background:#fff;border:1px solid #ddd6c6;border-radius:12px;padding:12px;white-space:pre-wrap}
+@media print{.chatbox,.chat-quick{display:none!important}}

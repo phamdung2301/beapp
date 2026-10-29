@@ -2,9 +2,13 @@ import React, { useMemo, useState, useEffect, useRef } from 'react'
 import { DAYS, WEEKS, REVIEW_CHECKLIST, CAPSTONE_RUBRIC } from './data/days.js'
 import { DAY_EXTRA } from './data/dayExtra.js'
 import { CONCEPT_EXPLAIN } from './data/conceptExplain.js'
+import { QUIZ_EXTRA } from './data/quizExtra.js'
+import { LABS } from './data/labs.js'
+import { PROVIDERS, detectProvider, defaultModelFor, listModels } from './llm.js'
 import { useProgress, useReveal, streakOf, addDays, todayStr, sm2Next, masteryLevel } from './store.js'
 import { LogSimulator, SpecCalculator, MisconceptionCorner } from './components/Day1Interactive.jsx'
 import { LabView, QuizBox, TeachBackBox } from './components/Labs.jsx'
+import { TutorChat } from './components/TutorChat.jsx'
 
 export function enrichDay(day) {
   const ex = DAY_EXTRA[day.id]
@@ -144,14 +148,22 @@ function SearchView({ go, s, initialQ }) {
     return ALL_DAYS.map(d => {
       const noteHits = d.exercises.map((_, i) => s.notes?.[`${d.id}-${i}`] || '').filter(t => t.toLowerCase().includes(k))
       const conceptHit = d.concepts.find(c => (c.t + ' ' + c.d).toLowerCase().includes(k))
-      const base = (d.title + ' ' + d.goal + ' ' + d.concepts.map(c => c.t + ' ' + c.d).join(' ') + ' ' + d.exercises.map(e => e.t).join(' ')).toLowerCase().includes(k)
-      return base || noteHits.length ? { d, noteHits, conceptHit } : null
+      // Quét cả tầng giải thích sâu (what/role/thresholds/dontUse) và lab —
+      // hai nguồn nội dung lớn nhất của app, trước đây tìm kiếm bỏ qua.
+      const explains = CONCEPT_EXPLAIN[d.id] || []
+      const explainStr = explains.map(e => [e?.what, e?.role, e?.thresholds, e?.dontUse].filter(Boolean).join(' ')).join(' ')
+      const labs = LABS[d.id] || []
+      const labStr = labs.map(l => [l.title, l.prompt, l.concept].join(' ')).join(' ')
+      const base = (d.title + ' ' + d.goal + ' ' + d.concepts.map(c => c.t + ' ' + c.d).join(' ') + ' ' + d.exercises.map(e => e.t).join(' ') + ' ' + explainStr + ' ' + labStr).toLowerCase().includes(k)
+      const labHit = labs.find(l => (l.title + ' ' + l.prompt + ' ' + l.concept).toLowerCase().includes(k))
+      const explainHit = explains.find(e => [e?.what, e?.role, e?.thresholds, e?.dontUse].filter(Boolean).join(' ').toLowerCase().includes(k))
+      return base || noteHits.length ? { d, noteHits, conceptHit, labHit, explainHit } : null
     }).filter(Boolean)
   }, [q, s.notes])
-  return <div><h2>Tìm kiếm toàn app</h2><input style={{ width: '100%', padding: 12 }} placeholder="Gõ ít nhất 2 ký tự, ví dụ: JWT, Saga, N+1, cache…" value={q} onChange={e => setQ(e.target.value)} />
-    <p className="mut">Tìm trong tiêu đề, mục tiêu, khái niệm, bài tập và ghi chú của bạn.</p>
+  return <div><h2>Tìm kiếm toàn app</h2><input style={{ width: '100%', padding: 12 }} placeholder="Gõ ít nhất 2 ký tự, ví dụ: JWT, Saga, N+1, cache, stampede, idempotent…" value={q} onChange={e => setQ(e.target.value)} />
+    <p className="mut">Tìm trong tiêu đề, mục tiêu, khái niệm, bài tập, ghi chú của bạn, giải thích sâu và lab.</p>
     {q.trim().length >= 2 && <p className="mut">{res.length} kết quả</p>}
-    <div className="grid">{res.map(({ d, noteHits, conceptHit }) => <div className="card" key={d.id}><div className="eyebrow">Ngày {d.id}</div><h3><Highlight text={d.title} q={q} /></h3><p className="mut"><Highlight text={d.goal} q={q} /></p>{conceptHit && <p className="mut">Khớp khái niệm: <Highlight text={conceptHit.t} q={q} /></p>}{noteHits.length > 0 && <p className="mut">Khớp {noteHits.length} ghi chú của bạn ở ngày này.</p>}<button className="btn small" onClick={() => go('day', d.id)}>Vào ngày này</button></div>)}</div>
+    <div className="grid">{res.map(({ d, noteHits, conceptHit, labHit, explainHit }) => <div className="card" key={d.id}><div className="eyebrow">Ngày {d.id}</div><h3><Highlight text={d.title} q={q} /></h3><p className="mut"><Highlight text={d.goal} q={q} /></p>{conceptHit && <p className="mut">Khớp khái niệm: <Highlight text={conceptHit.t} q={q} /></p>}{explainHit && <p className="mut">Khớp trong giải thích sâu của ngày này.</p>}{labHit && <p className="mut">Khớp lab: {labHit.title}.</p>}{noteHits.length > 0 && <p className="mut">Khớp {noteHits.length} ghi chú của bạn ở ngày này.</p>}<button className="btn small" onClick={() => go('day', d.id)}>Vào ngày này</button></div>)}</div>
     <h3 style={{ marginTop: 24 }}>Thuật ngữ hay gặp</h3><p className="mut">Idempotency: gửi lại cùng 1 thao tác mà kết quả không đổi. Circuit Breaker: ngắt mạch khi service lỗi liên tục. Aggregate: ranh giới transaction và invariant trong DDD. Outbox: ghi event cùng transaction với dữ liệu nghiệp vụ rồi gửi sau. N+1: 1 query lấy danh sách rồi N query lấy từng item con.</p></div>
 }
 
@@ -211,8 +223,9 @@ function ExplainView({ day, go, s, patch }) {
         {e.dontUse && <div className="warn" style={{ marginTop: 12 }}><strong>Không dùng khi:</strong> {e.dontUse}</div>}
         <p><strong>Kết nối với các khái niệm khác như thế nào?</strong></p>
         <ul>{e.connects.map((cn, j) => <li key={j}>{cn.t}{typeof cn.day === 'number' && <> <button className="btn ghost small" onClick={() => go('day', cn.day, undefined, 'explain')}>→ Ngày {cn.day}: {DAY_BY_ID[cn.day]?.title || ''}</button></>}</li>)}</ul>
-        <QuizBox quiz={e.quiz} mKey={`${day.id}-${i}`} s={s} patch={patch} />
-        <TeachBackBox cKey={`${day.id}-${i}`} s={s} patch={patch} />
+        <QuizBox quiz={e.quiz || QUIZ_EXTRA[`${day.id}-${i}`]} mKey={`${day.id}-${i}`} s={s} patch={patch} />
+        <TeachBackBox cKey={`${day.id}-${i}`} c={c} e={e} s={s} patch={patch} />
+        <TutorChat s={s} day={day} kind="concept" index={i} />
       </div>}
     </div>)}
     {items.length === 0 && <p className="mut">Không có khái niệm nào khớp với từ khóa này trong ngày {day.id}. Hãy thử từ khóa khác hoặc tìm toàn app.</p>}
@@ -279,7 +292,9 @@ function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, 
           <textarea value={note} onChange={ev => setNote(key, ev.target.value)} placeholder="Viết output ở đây: sơ đồ, contract, bảng review, ADR… Người khác đọc được mới tính là xong." />
           <p className="mut">{words} từ · {s.notesSavedAt?.[key] ? `Đã lưu lúc ${fmtTime(s.notesSavedAt[key])}` : 'Chưa lưu gì'} · <button className="btn ghost small" onClick={() => setPreview(prevP => ({ ...prevP, [key]: !prevP[key] }))}>{preview[key] ? 'Sửa tiếp' : 'Xem trước markdown'}</button></p>
           {preview[key] && <div className="paper" style={{ padding: 14 }} dangerouslySetInnerHTML={{ __html: mdPreview(note || '(Chưa có ghi chú)') }} />}
-          {e.answer && <details><summary><strong>Xem đáp án mẫu — làm trước rồi mới đối chiếu</strong></summary><p>{e.answer}</p>{e.rubric && <><strong>Bài làm đạt khi có đủ:</strong><ul>{e.rubric.map((r, j) => <li key={j}>{r}</li>)}</ul></>}</details>}
+          {e.rubric && <div className="banner" style={{ marginTop: 10 }}><strong>Tiêu chí đạt — đối chiếu khi viết:</strong><ul style={{ margin: '6px 0 0' }}>{e.rubric.map((r, j) => <li key={j}>{r}</li>)}</ul></div>}
+          {e.answer && <details><summary><strong>Xem đáp án mẫu — làm trước rồi mới đối chiếu</strong></summary><p>{e.answer}</p></details>}
+          <TutorChat s={s} day={day} kind="exercise" index={i} />
         </div>
         </React.Fragment>
       })}
@@ -302,6 +317,7 @@ function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, 
         setDone(day.id, true)
       }}>Đánh dấu đã xong ngày này ✓</button>{s.done[day.id] && <button className="btn ghost" onClick={() => setDone(day.id, false)}>Bỏ đánh dấu xong</button>}</div>
       <p className="mut">Chỉ đánh dấu xong khi đã có output ở tab Làm bài tập, không chỉ đọc xong.</p>
+      {day.isCheckpoint && <div style={{ marginTop: 16 }}><TutorChat s={s} day={day} kind="defend" /></div>}
     </div>}
     <div className="sticky-nav">
       {prev && <button className="btn ghost small" onClick={() => go('day', prev.id)}>← Ngày {prev.id}</button>}
@@ -314,13 +330,43 @@ function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, 
     </div>
   </div>
 }
+// Thẻ flashcard 3 chế độ, cùng một lịch SM-2 theo khái niệm:
+// - Thuật ngữ: mặt trước tên, mặt sau mô tả + ngưỡng + cấm dùng (từ explain sâu).
+// - Đoán ngược: mặt trước là mô tả, đoán tên khái niệm.
+// - Tình huống: mặt trước là ngưỡng quyết định / ràng buộc "không dùng khi" (ngày có shape data).
+const FC_MODES = [
+  { id: 'term', label: 'Thuật ngữ' },
+  { id: 'reverse', label: 'Đoán ngược' },
+  { id: 'scenario', label: 'Tình huống' },
+]
+function clipTxt(t, n) { t = String(t || '').trim(); return t.length <= n ? t : t.slice(0, n - 1) + '…' }
+function buildCards(mode, day) {
+  const explains = CONCEPT_EXPLAIN[day.id] || []
+  const out = []
+  day.concepts.forEach((c, i) => {
+    const e = explains[i]
+    if (mode === 'term') out.push({ idx: i, front: c.t, back: c.d, thresholds: e?.thresholds, dontUse: e?.dontUse })
+    else if (mode === 'reverse') {
+      const src = e?.what || c.d
+      if (src) out.push({ idx: i, front: clipTxt(src, 260), back: `${c.t} — ${c.d}` })
+    } else if (mode === 'scenario') {
+      if (e?.thresholds) out.push({ idx: i, front: `Ngưỡng quyết định: ${e.thresholds}\n\nĐây là quy tắc của khái niệm nào trong ngày này?`, back: `${c.t} — ${c.d}` })
+      else if (e?.dontUse) out.push({ idx: i, front: `Không nên dùng khi: ${e.dontUse}\n\nĐây là khái niệm nào?`, back: `${c.t} — ${c.d}` })
+    }
+  })
+  return out
+}
 function Flashcards({ day, s, patch }) {
-  const [queue, setQueue] = useState(() => day.concepts.map((_, i) => i))
+  const [mode, setMode] = useState('term')
+  const cards = useMemo(() => buildCards(mode, day), [mode, day])
+  const [queue, setQueue] = useState(() => cards.map((_, i) => i))
   const [pos, setPos] = useState(0)
   const [flip, setFlip] = useState(false)
   const [done, setDone] = useState(false)
+  const reset = (m = mode) => { const cs = buildCards(m, day); setQueue(cs.map((_, i) => i)); setPos(0); setFlip(false); setDone(false) }
+  useEffect(() => { reset(mode) }, [mode, day.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const idx = queue[pos]
-  const c = day.concepts[idx]
+  const card = cards[idx]
   useEffect(() => {
     const h = (e) => {
       if (e.key === 'ArrowRight') { setPos(p => Math.min(queue.length - 1, p + 1)); setFlip(false) }
@@ -329,16 +375,19 @@ function Flashcards({ day, s, patch }) {
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [queue.length])
-  if (done || pos >= queue.length) {
-    const unknownIdx = day.concepts.map((_, i) => i).filter(i => s.srs?.[`${day.id}-${i}`]?.status === 'unknown')
-    return <div className="card" style={{ marginTop: 16 }}><h3>Đã ôn hết {day.concepts.length} thẻ</h3><p>{unknownIdx.length} thẻ chưa thuộc. Bấm dưới đây để ôn lại đúng các thẻ đó.</p><button className="btn" disabled={unknownIdx.length === 0} onClick={() => { setQueue(unknownIdx); setPos(0); setFlip(false); setDone(false) }}>Ôn lại các thẻ chưa thuộc</button> <button className="btn ghost" onClick={() => { setQueue(day.concepts.map((_, i) => i)); setPos(0); setFlip(false); setDone(false) }}>Ôn lại từ đầu</button></div>
+  if (cards.length === 0) {
+    return <div className="card" style={{ marginTop: 16 }}><p className="mut">Chế độ thẻ "{FC_MODES.find(m => m.id === mode)?.label}" chưa có thẻ cho ngày này (thẻ tình huống sinh từ ngưỡng quyết định / cấm dùng, hiện có ở các ngày 11–20). Thử chế độ khác.</p></div>
   }
-  if (!c) return null
-  const srs = s.srs2?.[`${day.id}-${idx}`] || s.srs?.[`${day.id}-${idx}`]
+  if (done || pos >= queue.length) {
+    const unknownIdx = cards.map((_, i) => i).filter(i => s.srs?.[`${day.id}-${cards[i].idx}`]?.status === 'unknown')
+    return <div className="card" style={{ marginTop: 16 }}><h3>Đã ôn hết {cards.length} thẻ</h3><p>{unknownIdx.length} thẻ chưa thuộc. Bấm dưới đây để ôn lại đúng các thẻ đó.</p><button className="btn" disabled={unknownIdx.length === 0} onClick={() => { setQueue(unknownIdx); setPos(0); setFlip(false); setDone(false) }}>Ôn lại các thẻ chưa thuộc</button> <button className="btn ghost" onClick={() => reset()}>Ôn lại từ đầu</button></div>
+  }
+  if (!card) return null
+  const srs = s.srs2?.[`${day.id}-${card.idx}`] || s.srs?.[`${day.id}-${card.idx}`]
   const mark = (known) => {
-    const nxt = sm2Next(s.srs2?.[`${day.id}-${idx}`], known)
+    const nxt = sm2Next(s.srs2?.[`${day.id}-${card.idx}`], known)
     const due = addDays(todayStr(), nxt.interval)
-    patch({ flashKnown: { ...s.flashKnown, [`${day.id}-${idx}`]: known }, srs: { ...s.srs, [`${day.id}-${idx}`]: { status: known ? 'known' : 'unknown', due } }, srs2: { ...s.srs2, [`${day.id}-${idx}`]: { ...nxt, due } } })
+    patch({ flashKnown: { ...s.flashKnown, [`${day.id}-${card.idx}`]: known }, srs: { ...s.srs, [`${day.id}-${card.idx}`]: { status: known ? 'known' : 'unknown', due } }, srs2: { ...s.srs2, [`${day.id}-${card.idx}`]: { ...nxt, due } } })
     setTimeout(() => {
       setFlip(false)
       if (known) { if (pos + 1 >= queue.length) setDone(true); else setPos(pos + 1) }
@@ -351,10 +400,12 @@ function Flashcards({ day, s, patch }) {
     }, 300)
   }
   return <div style={{ marginTop: 16 }}>
+    <div className="row" style={{ marginBottom: 8 }}>{FC_MODES.map(m => <button key={m.id} className={mode === m.id ? 'btn small' : 'btn ghost small'} onClick={() => setMode(m.id)}>{m.label}</button>)}</div>
+    <p className="mut">{mode === 'term' && 'Mặt sau có thêm ngưỡng quyết định và cảnh báo "không dùng khi" (nơi có dữ liệu).'}</p>
     <p className="mut">Thẻ {pos + 1}/{queue.length} · Bấm vào thẻ để lật, hoặc dùng phím Space/Enter để lật, phím mũi tên để chuyển thẻ. Thẻ chưa thuộc sẽ quay lại cuối hàng đợi trong phiên này và hẹn ôn sau 1 ngày; thẻ đã thuộc hẹn ôn theo SM-2 (1 → 6 → giãn dần).</p>
-    <div className="flash" tabIndex={0} role="button" aria-label={`Thẻ flashcard: ${c.t}. Bấm Space hoặc Enter để lật.`} onClick={() => setFlip(!flip)} onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setFlip(!flip) } }}><div className={`flash-in ${flip ? 'flipped' : ''}`}>
-      <div className="flash-face"><div className="eyebrow">Khái niệm</div><h3>{c.t}</h3><p className="mut">Bấm để xem giải thích</p></div>
-      <div className="flash-face flash-back"><div className="eyebrow">Giải thích</div><p>{c.d}</p></div>
+    <div className="flash" tabIndex={0} role="button" aria-label={`Thẻ flashcard. Bấm Space hoặc Enter để lật.`} onClick={() => setFlip(!flip)} onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setFlip(!flip) } }}><div className={`flash-in ${flip ? 'flipped' : ''}`}>
+      <div className="flash-face"><div className="eyebrow">{mode === 'term' ? 'Khái niệm' : mode === 'reverse' ? 'Đây là khái niệm nào?' : 'Tình huống'}</div><p style={{ whiteSpace: 'pre-wrap' }}>{card.front}</p>{mode === 'term' && <p className="mut">Bấm để xem giải thích</p>}</div>
+      <div className="flash-face flash-back"><div className="eyebrow">Giải thích</div><p>{card.back}</p>{mode === 'term' && card.thresholds && <p className="mut">🚦 Ngưỡng: {card.thresholds}</p>}{mode === 'term' && card.dontUse && <p className="mut">🚫 Không dùng khi: {card.dontUse}</p>}</div>
     </div></div>
     <div className="row" style={{ marginTop: 12 }}><button className="btn ghost small" onClick={() => { setPos(Math.max(0, pos - 1)); setFlip(false) }}>← Thẻ trước</button><button className="btn small" onClick={() => { if (pos + 1 >= queue.length) setDone(true); else setPos(pos + 1); setFlip(false) }}>Thẻ sau →</button>
       <button className="btn small" onClick={() => mark(true)}>Đã thuộc ✓</button>
@@ -368,6 +419,10 @@ function Settings({ p }) {
   const [perm, setPerm] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'unsupported')
   const [pendingFile, setPendingFile] = useState(null)
   const [importSummary, setImportSummary] = useState('')
+  const prov = detectProvider(s.llm)
+  const [models, setModels] = useState([])
+  const [testing, setTesting] = useState(false)
+  const [testMsg, setTestMsg] = useState('')
   return <div><h2>Cài đặt và cài app lên laptop</h2>
     <div className="card"><h3>1. Cài đặt PWA</h3><ol><li>Mở web này bằng Chrome hoặc Edge trên laptop.</li><li>Trên thanh địa chỉ, bấm biểu tượng Install / Cài đặt, hoặc menu ⋮ → Install app / Cài đặt ứng dụng.</li><li>Biểu tượng BEApp sẽ xuất hiện ngoài desktop, taskbar và Start Menu. Mở từ biểu tượng sẽ ra cửa sổ riêng, không có thanh địa chỉ.</li><li>App chạy offline cho nội dung 30 ngày và bài làm của bạn. Khi có bản mới, app sẽ hiện banner "Có bản mới" — bấm cập nhật, đừng để bản cũ kẹt lại.</li></ol><p className="mut">Lưu ý: nội dung và tiến độ lưu trên trình duyệt của máy bạn. Đổi máy thì dùng Xuất dữ liệu ở dưới rồi Nhập lại. Icon PWA đã có PNG 192 và 512 trong manifest; việc cài từ link deploy thật vẫn cần kiểm chứng sau khi có link Vercel.</p></div>
     <div className="card" style={{ marginTop: 14 }}><h3>2. Lịch học của bạn</h3>
@@ -379,13 +434,28 @@ function Settings({ p }) {
     <div className="card" style={{ marginTop: 14 }}><h3>3. Sao lưu tiến độ</h3><div className="row"><button className="btn small" onClick={exportJSON}>Xuất dữ liệu ra file JSON</button><label className="btn ghost small">Chọn file để nhập<input type="file" accept="application/json" hidden onChange={e => { if (e.target.files[0]) setPendingFile(e.target.files[0]); e.target.value = '' }} /></label><button className="btn ghost small" onClick={() => { if (window.confirm('Xóa toàn bộ tiến độ và ghi chú? Hành động này không hoàn tác được.')) clearAll() }}>Xóa toàn bộ dữ liệu</button></div>
       {pendingFile && <div className="warn" style={{ marginTop: 12 }}><strong>Nhập file “{pendingFile.name}” sẽ thay thế toàn bộ tiến độ hiện tại.</strong> Bạn đã xuất backup chưa?<div className="row" style={{ marginTop: 8 }}><button className="btn small" onClick={exportJSON}>Xuất backup trước</button><button className="btn" onClick={() => importJSON(pendingFile, (ok, data) => { if (ok) { const days = data?.done ? Object.keys(data.done).length : 0; const notes = data?.notes ? Object.values(data.notes).filter(Boolean).length : 0; setImportSummary(`Đã nhập xong: ${days} ngày xong, ${notes} ghi chú.`); setPendingFile(null) } else setImportSummary('File không đọc được, tiến độ cũ vẫn giữ nguyên.') })}>Nhập và thay thế</button><button className="btn ghost small" onClick={() => setPendingFile(null)}>Hủy</button></div></div>}
       {importSummary && <p>{importSummary}</p>}</div>
-    <div className="card" style={{ marginTop: 14 }}><h3>4. AI Tutor (tùy chọn, key của bạn)</h3>
-      <p className="mut">App không có key AI tích hợp sẵn và không gửi dữ liệu của bạn đi đâu. Nếu bạn có key Groq hoặc OpenAI, nhập vào đây để hỏi tutor ngay trong lab. Key chỉ lưu ở localStorage trên máy bạn.</p>
-      <label>Endpoint (tương thích OpenAI)</label><input style={{ width: '100%', padding: 12 }} value={s.llm?.endpoint || ''} onChange={e => patch({ llm: { ...s.llm, endpoint: e.target.value } })} />
-      <label>Model</label><input style={{ width: '100%', padding: 12 }} value={s.llm?.model || ''} onChange={e => patch({ llm: { ...s.llm, model: e.target.value } })} />
-      <label>API key</label><input type="password" style={{ width: '100%', padding: 12 }} value={s.llm?.key || ''} onChange={e => patch({ llm: { ...s.llm, key: e.target.value } })} placeholder="Dán key vào đây, không chia sẻ cho ai" />
-      <div className="row"><button className="btn ghost small" onClick={() => patch({ llm: { ...s.llm, key: '' } })}>Xóa key</button></div>
-      <p className="mut">Khi chưa có key, lab vẫn có nút Gợi ý viết sẵn — tutor chỉ là lớp hỗ trợ thêm.</p></div>
+    <div className="card" style={{ marginTop: 14 }}><h3>4. AI Gia sư (tùy chọn, key của bạn)</h3>
+      <p className="mut">Key chỉ lưu ở localStorage trên máy bạn, app không gửi đi đâu ngoài endpoint của nhà cung cấp bạn chọn. App tự nhận diện theo định dạng key: <strong>AQ.</strong> (Google Cloud API key mới) hoặc <strong>AIza</strong> (AI Studio cũ) → Google Gemini; <strong>gsk_</strong> → Groq; key khác → dùng endpoint bạn nhập.</p>
+      <label>Provider</label>
+      <select value={s.llm?.provider || 'auto'} onChange={e => patch({ llm: { ...s.llm, provider: e.target.value } })}>
+        <option value="auto">Tự nhận diện theo key</option>
+        <option value="gemini">Google Gemini (key AQ. / AIza)</option>
+        <option value="groq">Groq (key gsk_)</option>
+        <option value="custom">Endpoint khác (OpenAI-compatible)</option>
+      </select>
+      {prov === 'custom' && <><label>Endpoint (dạng …/v1/chat/completions)</label><input style={{ width: '100%', padding: 12 }} value={s.llm?.endpoint || ''} onChange={e => patch({ llm: { ...s.llm, endpoint: e.target.value } })} placeholder="https://…/v1/chat/completions" /></>}
+      <label>API key</label>
+      <input type="password" style={{ width: '100%', padding: 12 }} value={s.llm?.key || ''} onChange={e => patch({ llm: { ...s.llm, key: e.target.value } })} placeholder="Dán key: AQ.… / AIza… / gsk_…" />
+      <p className="mut">Nhận diện hiện tại: <strong>{PROVIDERS[prov]?.label}</strong> · model mặc định: <strong>{defaultModelFor(prov, s.llm) || '(chưa có — chọn hoặc nhập)'}</strong>. Lấy key Gemini: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">AI Studio</a> · key Groq: <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer">Groq Console</a>.</p>
+      <label>Model (để trống dùng mặc định)</label>
+      <input style={{ width: '100%', padding: 12 }} list="llm-models" value={s.llm?.model || ''} onChange={e => patch({ llm: { ...s.llm, model: e.target.value } })} placeholder={defaultModelFor(prov, s.llm) || 'model-name'} />
+      <datalist id="llm-models">{models.map(m => <option key={m} value={m} />)}</datalist>
+      <div className="row">
+        <button className="btn ghost small" disabled={testing} onClick={async () => { setTesting(true); setTestMsg(''); try { const list = await listModels(s.llm || {}); setModels(list); setTestMsg(`Kết nối OK — ${list.length} model chat khả dụng cho key này. Gợi ý: ${list.slice(0, 4).join(', ')}. Chọn trong ô Model hoặc để trống dùng mặc định.`) } catch (e) { setTestMsg('Lỗi: ' + (e.message || e)) } setTesting(false) }}>{testing ? 'Đang kiểm tra…' : 'Kiểm tra key & tải danh sách model'}</button>
+        <button className="btn ghost small" onClick={() => patch({ llm: { provider: s.llm?.provider || 'auto', endpoint: s.llm?.endpoint || '', model: '', key: '' } })}>Xóa key</button>
+      </div>
+      {testMsg && <p className="mut">{testMsg}</p>}
+      <p className="mut">Khi chưa có key: mọi phần vẫn chạy với gợi ý viết sẵn. Trong mỗi khung chat có nút "Sao chép bối cảnh" — dán sang bất kỳ AI nào bạn đang có mà không cần key trong app.</p></div>
   </div>
 }
 export default function App() {

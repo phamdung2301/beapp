@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react'
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url'
 import { LABS } from '../data/labs.js'
+import { chatCompletion, detectProvider } from '../llm.js'
+import { TutorChat } from './TutorChat.jsx'
 
 // Lab thực hành: mỗi lab có code lỗi/skeleton, bằng chứng lỗi, đáp án, vì sao, gợi ý.
 // Engine KHÔNG tự chấm code bằng test ẩn (dữ liệu lab không mang assertion) —
@@ -11,7 +13,7 @@ function normLines(code) {
   return (code || '').split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean)
 }
 
-function LabCard({ lab, mKey, s, patch }) {
+function LabCard({ lab, mKey, day, s, patch }) {
   const [code, setCode] = useState(lab.code)
   const [attempt, setAttempt] = useState('')
   const [hintIdx, setHintIdx] = useState(0)
@@ -69,7 +71,7 @@ function LabCard({ lab, mKey, s, patch }) {
       <button className="btn ghost small" onClick={() => mark(false)}>Chưa làm được, ôn lại sau</button>
       {done !== undefined && <span className="mut">{done ? 'Đã đánh dấu làm được.' : 'Đã đánh dấu chưa làm được — lab này sẽ được ưu tiên ôn lại.'}</span>}
     </div>
-    <TutorPanel context={`${lab.title} — ${lab.prompt}`} s={s} />
+    <TutorChat s={s} day={day} kind="lab" lab={lab} openedHints={hintIdx} />
   </div>
 }
 
@@ -136,42 +138,6 @@ function SqlPlayground({ initialSql }) {
   </div>
 }
 
-function TutorPanel({ context, s }) {
-  const [open, setOpen] = useState(false)
-  const [q, setQ] = useState('')
-  const [ans, setAns] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState('')
-  const cfg = s.llm || {}
-  const ask = async () => {
-    if (!cfg.key) { setErr('Chưa có key. Vào Cài đặt → mục AI Tutor để nhập key của bạn (chỉ lưu trên máy bạn).'); return }
-    setBusy(true); setErr(''); setAns('')
-    try {
-      const r = await fetch(cfg.endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.key}` },
-        body: JSON.stringify({ model: cfg.model, temperature: 0.3, max_tokens: 800, messages: [
-          { role: 'system', content: 'Bạn là tutor dạy backend senior bằng tiếng Việt. Trả lời bằng gợi ý từng bước kiểu Socratic, không đưa đáp án trọn vẹn ngay. Gắn với bối cảnh bài học người dùng gửi kèm. Ngắn gọn, cụ thể, không lan man.' },
-          { role: 'user', content: `Bối cảnh bài học: ${context}\nCâu hỏi của học viên: ${q}` },
-        ] }),
-      })
-      const data = await r.json()
-      if (!r.ok) throw new Error(data?.error?.message || `HTTP ${r.status}`)
-      setAns(data.choices?.[0]?.message?.content || '(Không có nội dung trả về)')
-    } catch (e) { setErr(String(e.message || e)) }
-    setBusy(false)
-  }
-  if (!open) return <button className="btn ghost small" style={{ marginTop: 8 }} onClick={() => setOpen(true)}>Hỏi AI tutor về lab này</button>
-  return <div style={{ marginTop: 12 }}>
-    <label>Hỏi AI tutor (trả lời bằng gợi ý, không đưa đáp án trọn vẹn)</label>
-    <textarea value={q} onChange={e => setQ(e.target.value)} placeholder="VD: Vì sao sửa này lại hết lỗi mà sửa kia thì không?" style={{ width: '100%', minHeight: 70 }} />
-    <div className="row"><button className="btn small" disabled={busy || !q.trim()} onClick={ask}>{busy ? 'Đang hỏi…' : 'Gửi câu hỏi'}</button><button className="btn ghost small" onClick={() => setOpen(false)}>Đóng</button></div>
-    {!cfg.key && <p className="mut">Chưa có key AI — vào Cài đặt → mục AI Tutor để nhập key Groq/OpenAI của bạn. Key chỉ lưu ở localStorage trên máy bạn, app không gửi key đi đâu khác ngoài endpoint bạn nhập. Khi chưa có key, dùng nút Gợi ý ở trên lab.</p>}
-    {err && <p className="warn">{err}</p>}
-    {ans && <div className="paper" style={{ padding: 14 }}><strong>AI tutor:</strong><p style={{ whiteSpace: 'pre-wrap' }}>{ans}</p></div>}
-  </div>
-}
-
 export function QuizBox({ quiz, mKey, s, patch }) {
   const [attempt, setAttempt] = useState('')
   const [show, setShow] = useState(false)
@@ -191,17 +157,39 @@ export function QuizBox({ quiz, mKey, s, patch }) {
   </div>
 }
 
-export function TeachBackBox({ cKey, s, patch }) {
+export function TeachBackBox({ cKey, c, e, s, patch }) {
   const [text, setText] = useState(s.teachBack?.[cKey]?.text || '')
+  const [review, setReview] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
   const saved = s.teachBack?.[cKey]
   const save = () => {
     patch({ teachBack: { ...s.teachBack, [cKey]: { text, at: new Date().toISOString() } }, mastery: { ...s.mastery, [cKey]: { ...(s.mastery?.[cKey] || {}), teachBack: true } } })
+  }
+  // AI đối chiếu (không chấm điểm, không tick giúp): so bản teach-back với nội dung gốc.
+  const askAI = async () => {
+    const cfg = s.llm || {}
+    if (!(cfg.key || detectProvider(cfg) === 'custom')) { setErr('Chưa có API key. Vào Cài đặt → AI Gia sư để nhập key, hoặc bỏ qua — bản này để bạn tự so lại cũng được.'); return }
+    setBusy(true); setErr(''); setReview('')
+    try {
+      const out = await chatCompletion(cfg, [
+        { role: 'system', content: 'Bạn là reviewer backend senior. Đối chiếu bản giải thích lại của học viên với nội dung gốc của khái niệm. Nêu 3 phần ngắn: (1) ý học viên nêu đúng, (2) ý còn thiếu, (3) ý sai hoặc không chính xác kèm cách sửa. KHÔNG chấm điểm, không viết lại toàn bộ bản giải thích, không tick giúp tiến độ. Tối đa 220 từ, tiếng Việt.' },
+        { role: 'user', content: `Khái niệm: ${c?.t || ''}\nNội dung gốc:\n${e?.what || ''}\n${e?.role || c?.d || ''}\n\nBản học viên viết:\n${text || '(trống)'}` },
+      ], { maxTokens: 600 })
+      setReview(out || '(Không có nội dung trả về)')
+    } catch (ex) { setErr(String(ex.message || ex)) }
+    setBusy(false)
   }
   return <div className="paper" style={{ padding: 14, marginTop: 12 }}>
     <strong>Giải thích lại bằng lời của bạn (khuyến khích, không bắt buộc)</strong>
     <p className="mut">Viết như đang giảng cho một bạn junior. Không có máy chấm — bản này để bạn tự so lại sau 1 tuần xem mình đã hiểu sâu hơn chưa. Không bắt buộc để đạt điểm 5, nhưng là bằng chứng mạnh nhất cho mức "giải thích được".</p>
     <textarea value={text} onChange={e => setText(e.target.value)} placeholder="VD: N+1 là khi… vì… nên sửa bằng…" style={{ width: '100%', minHeight: 90 }} />
-    <div className="row"><button className="btn small" onClick={save}>Lưu bản giải thích</button>{saved && <span className="mut">Đã lưu{saved.at ? ` lúc ${new Date(saved.at).toLocaleString('vi-VN')}` : ''}.</span>}</div>
+    <div className="row"><button className="btn small" onClick={save}>Lưu bản giải thích</button>
+      {e && <button className="btn ghost small" disabled={busy || !text.trim()} onClick={askAI}>{busy ? 'AI đang đối chiếu…' : '🤖 Xin AI đối chiếu với nội dung gốc'}</button>}
+      {saved && <span className="mut">Đã lưu{saved.at ? ` lúc ${new Date(saved.at).toLocaleString('vi-VN')}` : ''}.</span>}
+    </div>
+    {err && <p className="warn">{err}</p>}
+    {review && <div className="ai-review"><strong>AI đối chiếu (tham khảo, không chấm điểm):</strong><p style={{ whiteSpace: 'pre-wrap' }}>{review}</p></div>}
   </div>
 }
 
@@ -210,12 +198,12 @@ export function LabView({ day, s, patch }) {
   return <div style={{ marginTop: 16 }}>
     <div className="card"><h3>Lab thực hành — Ngày {day.id}: {day.title}</h3>
       <p className="mut">5 lab gắn với phần cần thiết nhất của ngày này: sửa code lỗi thật, điền khung code, đoán trước khi mở đáp án, ra quyết định, và chạy lệnh trong terminal mô phỏng. Lab SQL có nút chạy thật bằng SQLite trong trình duyệt. Làm được thì bấm "Tôi làm được" — app ghi vào tiến độ thông thạo của bạn.</p>
-      <p className="mut">{labs.length}/5 lab{labs.length !== 5 ? ' — cảnh báo: dữ liệu lab chưa đủ 5 cho ngày này.' : ''}</p>
+      <p className="mut">{labs.length}/5 lab{labs.length !== 5 ? ' — cảnh báo: dữ liệu lab chưa đủ 5 cho ngày này.' : ''} Mỗi lab có gia sư AI bám bài (bật ở Cài đặt → AI Gia sư). Lab SQL có nút chạy thật bằng SQLite trong trình duyệt. Làm được thì bấm "Tôi làm được" — app ghi vào tiến độ thông thạo của bạn.</p>
     </div>
     {labs.map(lab => {
       const ci = day.concepts.findIndex(c => c.t === lab.concept)
       const mKey = ci >= 0 ? `${day.id}-${ci}` : `lab-${lab.id}`
-      return <LabCard key={lab.id} lab={lab} mKey={mKey} s={s} patch={patch} />
+      return <LabCard key={lab.id} lab={lab} mKey={mKey} day={day} s={s} patch={patch} />
     })}
     {labs.length === 0 && <p className="mut">Ngày này chưa có lab.</p>}
   </div>

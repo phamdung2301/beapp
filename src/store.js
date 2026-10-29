@@ -4,7 +4,7 @@ const KEY = 'beapp-v1'
 
 // Tương thích ngược: state cũ (chỉ có done/scores/notes/...) vẫn đọc được,
 // các trường mới được merge mặc định, không xóa dữ liệu cũ.
-const DEFAULTS = { done: {}, scores: {}, notes: {}, criteria: {}, review: {}, capstone: {}, flashKnown: {}, startDate: '', reminder: '07:00', pomodoroDone: 0, pomodoroMinutes: 0, srs: {}, noteUndo: {}, notesSavedAt: {}, pomodoroInterrupted: 0, lastView: null, srs2: {}, labDone: {}, labNotes: {}, mastery: {}, teachBack: {}, llm: { endpoint: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.3-70b-versatile', key: '' } }
+const DEFAULTS = { done: {}, scores: {}, notes: {}, criteria: {}, review: {}, capstone: {}, flashKnown: {}, startDate: '', reminder: '07:00', pomodoroDone: 0, pomodoroMinutes: 0, srs: {}, noteUndo: {}, notesSavedAt: {}, pomodoroInterrupted: 0, lastView: null, srs2: {}, labDone: {}, labNotes: {}, mastery: {}, teachBack: {}, llm: { provider: 'auto', endpoint: '', model: '', key: '' } }
 
 // SM-2 (Wozniak 1987): khoảng ôn giãn theo lịch sử thật thay vì +1/+3 cố định.
 // known (q=4): ease giữ nguyên, interval 1 → 6 → interval*ease; unknown (q=1): reset về 1 ngày, lapses+1.
