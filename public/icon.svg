@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#07090f"/>
+  <rect x="28" y="28" width="456" height="456" rx="88" fill="none" stroke="#c6f24e" stroke-width="10"/>
+  <text x="256" y="235" font-family="Arial, sans-serif" font-size="150" font-weight="900" fill="#eaf0ff" text-anchor="middle">BE</text>
+  <text x="256" y="335" font-family="Arial, sans-serif" font-size="72" font-weight="900" fill="#c6f24e" text-anchor="middle">30 NGÀY</text>
+  <circle cx="400" cy="110" r="22" fill="#c6f24e"/>
+</svg>
