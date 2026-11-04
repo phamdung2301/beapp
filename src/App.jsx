@@ -2,7 +2,6 @@ import React, { useMemo, useState, useEffect, useRef } from 'react'
 import { WEEKS, REVIEW_CHECKLIST, CAPSTONE_RUBRIC } from './data/days.js'
 import { CONCEPT_EXPLAIN } from './data/conceptExplain.js'
 import { QUIZ_EXTRA } from './data/quizExtra.js'
-import { LABS } from './data/labs.js'
 import { DRILLS } from './data/drills.js'
 import { PROVIDERS, detectProvider, keysFor, maskKey, activeKeyIndex, checkKeys, listModels } from './llm.js'
 import { useProgress, useReveal, streakOf, addDays, todayStr, sm2Next, masteryLevel } from './store.js'
@@ -12,6 +11,7 @@ import { TutorChatButton, TutorChat } from './components/TutorChat.jsx'
 import { ChatDock } from './components/ChatDock.jsx'
 import { IncidentDrill } from './components/IncidentDrill.jsx'
 import { PromptStudioView } from './components/PromptStudio.jsx'
+import { StepFlow } from './components/StepFlow.jsx'
 import { enrichDay, ALL_DAYS, DAY_BY_ID } from './dayIndex.js'
 
 const DAY_TABS = ['learn', 'do', 'flash', 'check', 'explain', 'lab']
@@ -163,6 +163,9 @@ function Highlight({ text, q }) {
 function SearchView({ go, s, initialQ }) {
   const [q, setQ] = useState(initialQ || '')
   useEffect(() => { setQ(initialQ || '') }, [initialQ])
+  // Labs là lazy chunk — nạp nền khi mở Tìm kiếm lần đầu để quét cả lab.
+  const [labsIdx, setLabsIdx] = useState(null)
+  useEffect(() => { import('./data/labs.js').then(m => setLabsIdx(m.LABS)).catch(() => {}) }, [])
   const res = useMemo(() => {
     if (q.trim().length < 2) return []
     const k = q.toLowerCase()
@@ -173,14 +176,14 @@ function SearchView({ go, s, initialQ }) {
       // hai nguồn nội dung lớn nhất của app, trước đây tìm kiếm bỏ qua.
       const explains = CONCEPT_EXPLAIN[d.id] || []
       const explainStr = explains.map(e => [e?.what, e?.role, e?.thresholds, e?.dontUse].filter(Boolean).join(' ')).join(' ')
-      const labs = LABS[d.id] || []
+      const labs = labsIdx?.[d.id] || []
       const labStr = labs.map(l => [l.title, l.prompt, l.concept].join(' ')).join(' ')
       const base = (d.title + ' ' + d.goal + ' ' + d.concepts.map(c => c.t + ' ' + c.d).join(' ') + ' ' + d.exercises.map(e => e.t).join(' ') + ' ' + explainStr + ' ' + labStr).toLowerCase().includes(k)
       const labHit = labs.find(l => (l.title + ' ' + l.prompt + ' ' + l.concept).toLowerCase().includes(k))
       const explainHit = explains.find(e => [e?.what, e?.role, e?.thresholds, e?.dontUse].filter(Boolean).join(' ').toLowerCase().includes(k))
       return base || noteHits.length ? { d, noteHits, conceptHit, labHit, explainHit } : null
     }).filter(Boolean)
-  }, [q, s.notes])
+  }, [q, s.notes, labsIdx])
   return <div><h2>Tìm kiếm toàn app</h2><input id="search-input" style={{ width: '100%', padding: 12 }} placeholder="Gõ ít nhất 2 ký tự (phím tắt /), ví dụ: JWT, Saga, N+1, cache, stampede, idempotent…" value={q} onChange={e => setQ(e.target.value)} />
     <p className="mut">Tìm trong tiêu đề, mục tiêu, khái niệm, bài tập, ghi chú của bạn, giải thích sâu và lab.</p>
     {q.trim().length >= 2 && <p className="mut">{res.length} kết quả</p>}
@@ -273,6 +276,7 @@ function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, 
     <h2 style={{ fontSize: 34, letterSpacing: '-.03em', margin: '6px 0' }}>{day.title}</h2>
     <p className="mut">{day.goal}</p>
     <p className="mut">Bài tập: {pr.notesCount}/{day.exercises.length} đã có ghi chú · Tiêu chí: {pr.ticked}/{pr.totalCriteria} đã tick · {pomo.run ? `Pomodoro đang chạy ${String(Math.floor(pomo.sec / 60)).padStart(2, '0')}:${String(pomo.sec % 60).padStart(2, '0')}` : 'Pomodoro đang dừng'}</p>
+    <StepFlow day={day} s={s} curTab={tab} onJump={setTab} />
     <div className="row tabrow">
       <button className={tab === 'learn' ? 'btn small' : 'btn ghost small'} onClick={() => setTab('learn')}>Học</button>
       <button className={tab === 'do' ? 'btn small' : 'btn ghost small'} onClick={() => setTab('do')}>Làm bài tập</button>

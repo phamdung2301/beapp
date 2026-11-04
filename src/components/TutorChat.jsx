@@ -2,7 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { chatCompletion, hasConfig } from '../llm.js'
 import { buildContextBundle, MODE_LABEL } from '../tutorContext.js'
 import { DAY_BY_ID } from '../dayIndex.js'
-import { LABS } from '../data/labs.js'
+
+// LABS nạp lazy (chunk riêng) — tra khi cần parse scope lab, cache promise dùng lại.
+let _labsPromise = null
+const getLabs = () => { if (!_labsPromise) _labsPromise = import('../data/labs.js').then(m => m.LABS); return _labsPromise }
 
 // Khung chat gia sư bám bài. Các phần bài học (bài tập, lab, khái niệm, checkpoint)
 // chỉ đặt nút "Gia sư bám bài" — bấm nút mở ChatDock nổi bên phải, hội thoại sống
@@ -25,13 +28,14 @@ export function openDockChat(detail) { window.dispatchEvent(new CustomEvent('bea
 
 // Parse scope "exercise-1-0" | "lab-1-1-5" | "concept-3-2" | "defend-7" thành props cho TutorChat.
 // Lưu ý: lab id chứa dấu gạch ("1-5") nên phần lab phải join lại từ phần tử thứ 3.
-export function resolveChatScope(scope, openedHints = 0) {
+export async function resolveChatScope(scope, openedHints = 0) {
   const parts = String(scope).split('-')
   const kind = parts[0]
   const dayId = Number(parts[1])
   const day = DAY_BY_ID[dayId]
   if (!day || !MODE_LABEL[kind]) return null
   if (kind === 'lab') {
+    const LABS = await getLabs()
     const lab = (LABS[dayId] || []).find(l => l.id === parts.slice(2).join('-'))
     if (!lab) return null
     return { day, kind, lab, openedHints }

@@ -1,6 +1,5 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url'
-import { LABS } from '../data/labs.js'
 import { chatCompletion, hasConfig } from '../llm.js'
 import { TutorChatButton } from './TutorChat.jsx'
 import { buildContextBundle } from '../tutorContext.js'
@@ -196,18 +195,26 @@ export function TeachBackBox({ cKey, c, e, s, patch }) {
 }
 
 export function LabView({ day, s, patch }) {
-  const labs = LABS[day.id] || []
+  // Tách 150 lab thành lazy chunk (bundle chính đỡ ~1/4 dung lượng), tải khi mở tab.
+  const [labs, setLabs] = useState(null)
+  useEffect(() => {
+    let live = true
+    setLabs(null)
+    import('../data/labs.js').then(m => { if (live) setLabs(m.LABS[day.id] || []) }).catch(() => { if (live) setLabs([]) })
+    return () => { live = false }
+  }, [day.id])
   return <div style={{ marginTop: 16 }}>
     <div className="card"><h3>Lab thực hành — Ngày {day.id}: {day.title}</h3>
       <p className="mut">5 lab gắn với phần cần thiết nhất của ngày này: sửa code lỗi thật, điền khung code, đoán trước khi mở đáp án, ra quyết định, và chạy lệnh trong terminal mô phỏng.</p>
-      <p className="mut">{labs.length}/5 lab{labs.length !== 5 ? ' — cảnh báo: dữ liệu lab chưa đủ 5 cho ngày này.' : ''} Mỗi lab có gia sư AI bám bài (bật ở Cài đặt → AI Gia sư). Lab SQL có nút chạy thật bằng SQLite trong trình duyệt. Làm được thì bấm "Tôi làm được" — app ghi vào tiến độ thông thạo của bạn.</p>
+      {labs !== null && <p className="mut">{labs.length}/5 lab{labs.length !== 5 ? ' — cảnh báo: dữ liệu lab chưa đủ 5 cho ngày này.' : ''} Mỗi lab có gia sư AI bám bài (bật ở Cài đặt → AI Gia sư). Lab SQL có nút chạy thật bằng SQLite trong trình duyệt. Làm được thì bấm "Tôi làm được" — app ghi vào tiến độ thông thạo của bạn.</p>}
     </div>
-    {labs.map(lab => {
+    {labs === null && <div className="card"><p className="mut">Đang tải lab ngày {day.id}… (chunk riêng, lần đầu cần tải một lần rồi PWA cache lại)</p><div className="progress"><i style={{ width: '35%' }} /></div></div>}
+    {labs !== null && labs.map(lab => {
       const ci = day.concepts.findIndex(c => c.t === lab.concept)
       const mKey = ci >= 0 ? `${day.id}-${ci}` : `lab-${lab.id}`
       return <LabCard key={lab.id} lab={lab} mKey={mKey} day={day} s={s} patch={patch} />
     })}
-    {labs.length === 0 && <p className="mut">Ngày này chưa có lab.</p>}
+    {labs !== null && labs.length === 0 && <p className="mut">Ngày này chưa có lab.</p>}
   </div>
 }
 

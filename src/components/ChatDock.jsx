@@ -24,8 +24,13 @@ export function ChatDock({ s, open, onToggle, onClose, onOpen }) {
     .filter(([, v]) => v?.msgs?.length)
     .sort((a, b) => (b[1].at || 0) - (a[1].at || 0))
     .slice(0, 8)
-  const cur = scope ? resolveChatScope(scope) : null
-
+  const [cur, setCur] = useState(null)
+  useEffect(() => {
+    let live = true
+    if (!scope) { setCur(null); return }
+    resolveChatScope(scope).then(c => { if (live) setCur(c) })
+    return () => { live = false }
+  }, [scope])
   return <>
     <button className={`dock-launch ${open ? 'on' : ''}`} title="Gia sư bám bài (Esc để đóng)" onClick={onToggle}>💬</button>
     <div className={`dock ${open ? 'open' : ''}`} role="dialog" aria-label="Gia sư bám bài">

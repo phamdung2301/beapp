@@ -197,3 +197,13 @@ body.light .paper{border:1px solid #ddd6c6}
 .ps-cols{display:grid;grid-template-columns:1fr 1.15fr;gap:14px;align-items:start}
 @media(max-width:960px){.ps-cols{grid-template-columns:1fr}}
 .chip.on{border-color:var(--acc);color:var(--acc);font-weight:700}
+
+/* StepFlow — lộ trình học trong ngày (retrieval practice + progressive disclosure) */
+.stepflow{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.stepflow-row{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}
+.sf-step{display:inline-flex;align-items:center;gap:6px;background:transparent;border:1px solid var(--line);border-radius:999px;padding:7px 13px;color:var(--ink);white-space:nowrap;font-size:14px;transition:border-color var(--dur-1) var(--ease-out),transform var(--dur-1) var(--ease-out)}
+.sf-step:hover{transform:translateY(-2px);border-color:#3a4767}
+.sf-step.cur{background:var(--panel2);border-color:var(--acc)}
+.sf-step.ok .sf-ico{color:var(--acc);font-weight:900}
+.sf-step.half .sf-ico{color:#e5a13d;font-weight:900}
+.sf-ico{display:inline-block;width:14px;text-align:center}
