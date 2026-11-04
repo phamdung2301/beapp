@@ -105,6 +105,8 @@ const MASTERY_LEVELS = [
   { id: 'giải thích được', color: '#c6f24e' },
 ]
 
+const GalaxyHero = React.lazy(() => import('./components/GalaxyHero.jsx'))
+
 function Dashboard({ go, s }) {
   const doneCount = Object.keys(s.done).length
   const pct = Math.round(doneCount / 30 * 100)
@@ -116,7 +118,9 @@ function Dashboard({ go, s }) {
   const exDone = ALL_DAYS.reduce((a, d) => a + dayProgress(s, d).notesCount, 0)
   const exTotal = ALL_DAYS.reduce((a, d) => a + d.exercises.length, 0)
   return <div>
-    <section className="hero reveal"><div className="aurora" aria-hidden="true"><i /><i /></div><div style={{ position: 'relative' }}>
+    <section className="hero reveal"><div className="aurora" aria-hidden="true"><i /><i /></div>
+      <React.Suspense fallback={null}><GalaxyHero done={s.done} onSelect={id => go('day', id)} paused={!!s.motionPaused} /></React.Suspense>
+      <div className="hero-content">
       <div className="eyebrow">01 / Lộ trình · Java Backend Senior</div>
       <h1>Học sâu, <em>làm thật,</em><br />chấm thật.</h1>
       <p>30 ngày theo đúng Doc bạn đã làm. Mỗi ngày có khái niệm, bài tập, tiêu chí đạt và bẫy agent. Mở app là biết hôm nay học gì, không phải đi tìm.</p>

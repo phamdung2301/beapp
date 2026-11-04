@@ -20,6 +20,12 @@ button{cursor:pointer}
 .nav button{background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:7px 13px}
 .nav button.on{background:var(--acc);color:#07090f;border-color:var(--acc);font-weight:700}
 .hero{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:24px;padding:34px 28px;margin:22px 0;background:radial-gradient(600px 300px at 20% 0%,rgba(198,242,78,.18),transparent 60%),radial-gradient(600px 300px at 90% 20%,rgba(139,124,255,.22),transparent 60%),var(--panel)}
+/* Canvas galaxy nằm sau nội dung; cho phép cuộn dọc trên mobile khi quét qua */
+.hero .galaxy{touch-action:pan-y}
+/* Nội dung hero nằm trên canvas nhưng chỉ button/link ăn điểm — phần còn lại
+   cho pointer xuyên xuống galaxy (kéo xoay, hover node) */
+.hero-content{position:relative;z-index:1;pointer-events:none}
+.hero-content :is(button,a,input,select,textarea,details,summary){pointer-events:auto}
 .aurora{position:absolute;inset:0;overflow:hidden;pointer-events:none}
 .aurora i{position:absolute;width:340px;height:340px;border-radius:50%;filter:blur(70px);opacity:.35;animation:drift 14s ease-in-out infinite alternate}
 .aurora i:nth-child(1){background:#c6f24e;left:-80px;top:-100px}
