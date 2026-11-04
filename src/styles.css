@@ -207,3 +207,20 @@ body.light .paper{border:1px solid #ddd6c6}
 .sf-step.ok .sf-ico{color:var(--acc);font-weight:900}
 .sf-step.half .sf-ico{color:#e5a13d;font-weight:900}
 .sf-ico{display:inline-block;width:14px;text-align:center}
+
+/* Micro-interaction juice (game-motion): phản hồi >= 2 kênh, easing vật lý */
+.btn{transition:transform var(--dur-1) var(--ease-out),filter var(--dur-1) var(--ease-out),background var(--dur-1) var(--ease-out)}
+.btn:active{transform:scale(.96)}
+.daycard{transition:transform var(--dur-2) var(--ease-out),border-color var(--dur-2) var(--ease-out)}
+.daycard:hover{transform:translateY(-4px);border-color:#3a4767}
+.dock.open{animation:dockin .42s var(--ease-spring) both}
+@keyframes dockin{from{transform:translateX(48px);opacity:0}to{transform:none;opacity:1}}
+.sticky-nav{animation:snav .55s var(--ease-spring) both}
+@keyframes snav{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+.flash.pop{animation:pop .55s var(--ease-spring)}
+.flash.shake{animation:shake .45s var(--ease-out)}
+@keyframes pop{0%{transform:scale(1)}35%{transform:scale(1.06)}70%{transform:scale(.99)}100%{transform:scale(1)}}
+@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-9px)}40%{transform:translateX(9px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}
+.ring circle:last-of-type{transition:stroke-dashoffset .7s var(--ease-out)}
+.sf-step:active{transform:scale(.97)}
+@media(prefers-reduced-motion:reduce){.flash.pop,.flash.shake,.dock.open,.sticky-nav,.view .card{animation-play-state:paused!important}}

@@ -398,6 +398,7 @@ function Flashcards({ day, s, patch }) {
   const [pos, setPos] = useState(0)
   const [flip, setFlip] = useState(false)
   const [done, setDone] = useState(false)
+  const [fx, setFx] = useState('') // juice: pop khi thuộc, shake khi chưa thuộc (game-motion)
   const reset = (m = mode) => { const cs = buildCards(m, day); setQueue(cs.map((_, i) => i)); setPos(0); setFlip(false); setDone(false) }
   useEffect(() => { reset(mode) }, [mode, day.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const idx = queue[pos]
@@ -425,6 +426,8 @@ function Flashcards({ day, s, patch }) {
     const nxt = sm2Next(s.srs2?.[`${day.id}-${card.idx}`], known)
     const due = addDays(todayStr(), nxt.interval)
     patch({ flashKnown: { ...s.flashKnown, [`${day.id}-${card.idx}`]: known }, srs: { ...s.srs, [`${day.id}-${card.idx}`]: { status: known ? 'known' : 'unknown', due } }, srs2: { ...s.srs2, [`${day.id}-${card.idx}`]: { ...nxt, due } } })
+    setFx(known ? 'pop' : 'shake')
+    setTimeout(() => setFx(''), 600)
     setTimeout(() => {
       setFlip(false)
       if (known) { if (pos + 1 >= queue.length) setDone(true); else setPos(pos + 1) }
@@ -440,7 +443,7 @@ function Flashcards({ day, s, patch }) {
     {modeRow}
     <p className="mut">{mode === 'term' && 'Mặt sau có thêm ngưỡng quyết định và cảnh báo "không dùng khi" (nơi có dữ liệu).'}</p>
     <p className="mut">Thẻ {pos + 1}/{queue.length} · Bấm vào thẻ để lật, hoặc dùng phím Space/Enter để lật, phím mũi tên để chuyển thẻ. Thẻ chưa thuộc sẽ quay lại cuối hàng đợi trong phiên này và hẹn ôn sau 1 ngày; thẻ đã thuộc hẹn ôn theo SM-2 (1 → 6 → giãn dần).</p>
-    <div className="flash" tabIndex={0} role="button" aria-label={`Thẻ flashcard. Bấm Space hoặc Enter để lật.`} onClick={() => setFlip(!flip)} onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setFlip(!flip) } }}><div className={`flash-in ${flip ? 'flipped' : ''}`}>
+    <div className={`flash ${fx}`} tabIndex={0} role="button" aria-label={`Thẻ flashcard. Bấm Space hoặc Enter để lật.`} onClick={() => setFlip(!flip)} onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setFlip(!flip) } }}><div className={`flash-in ${flip ? 'flipped' : ''}`}>
       <div className="flash-face"><div className="eyebrow">{mode === 'term' ? 'Khái niệm' : mode === 'reverse' ? 'Đây là khái niệm nào?' : 'Tình huống'}</div><p style={{ whiteSpace: 'pre-wrap' }}>{card.front}</p>{mode === 'term' && <p className="mut">Bấm để xem giải thích</p>}</div>
       <div className="flash-face flash-back"><div className="eyebrow">Giải thích</div><p>{card.back}</p>{mode === 'term' && card.thresholds && <p className="mut">🚦 Ngưỡng: {card.thresholds}</p>}{mode === 'term' && card.dontUse && <p className="mut">🚫 Không dùng khi: {card.dontUse}</p>}</div>
     </div></div>
