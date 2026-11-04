@@ -30,8 +30,8 @@ button{cursor:pointer}
 .hero-content :is(button,a,input,select,textarea,details,summary){pointer-events:auto}
 .aurora{position:absolute;inset:0;overflow:hidden;pointer-events:none}
 .aurora i{position:absolute;width:340px;height:340px;border-radius:50%;filter:blur(70px);opacity:.35;animation:drift 14s ease-in-out infinite alternate}
-.aurora i:nth-child(1){background:#c6f24e;left:-80px;top:-100px}
-.aurora i:nth-child(2){background:#8b7cff;right:-60px;top:20px;animation-delay:-6s}
+.aurora i:nth-child(1){background:var(--acc);left:-80px;top:-100px}
+.aurora i:nth-child(2){background:var(--vio);right:-60px;top:20px;animation-delay:-6s}
 @keyframes drift{from{transform:translate(0,0) scale(1)}to{transform:translate(60px,40px) scale(1.15)}}
 .eyebrow{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--acc);font-weight:700}
 .hero h1{font-size:clamp(34px,6vw,62px);line-height:.95;letter-spacing:-.04em;margin:10px 0}
@@ -144,18 +144,19 @@ mark{background:var(--acc);color:#07090f;border-radius:3px;padding:0 2px}
 @media print{.chatbox,.chat-quick{display:none!important}}
 
 /* Chat dock nổi: panel bên phải, hội thoại sống xuyên suốt khi đổi bài; mobile = bottom-sheet */
-.dock{position:fixed;top:64px;right:12px;bottom:12px;width:400px;max-width:calc(100vw - 24px);background:var(--panel);border:1px solid var(--line);border-radius:16px;z-index:40;display:none;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.dock{position:fixed;top:64px;right:12px;bottom:12px;width:400px;max-width:calc(100vw - 24px);background:var(--panel);border:1px solid var(--line);border-radius:14px;z-index:40;display:none;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.5)}
 .dock.open{display:flex}
 .dock-head{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
 .dock-tabs{display:flex;gap:6px;flex-wrap:wrap;padding:10px 12px 0;overflow-y:auto;max-height:76px}
 .dock-tabs .chip.on{border-color:var(--acc);color:var(--acc)}
-.dock-body{flex:1;overflow-y:auto;padding:12px}
+.dock-body{flex:1;overflow-y:auto;padding:12px;overscroll-behavior:contain}
 .dock-body .chatbox{margin-top:0}
 .dock-empty{padding:8px 2px}
 .dock-launch{position:fixed;right:14px;bottom:14px;z-index:39;width:48px;height:48px;border-radius:50%;background:var(--acc);color:#07090f;border:0;font-size:20px;box-shadow:0 8px 24px rgba(0,0,0,.45)}
 .dock-launch.on{background:var(--vio);color:#fff}
+@media(max-width:1140px){.dock-launch{bottom:70px}}
 @media(max-width:700px){
-  .dock{top:auto;left:0;right:0;bottom:0;width:100%;max-width:none;height:72vh;border-radius:18px 18px 0 0}
+  .dock{top:auto;left:0;right:0;bottom:0;width:100%;max-width:none;height:72vh;height:72dvh;border-radius:18px 18px 0 0}
   .dock-launch{bottom:70px}
 }
 
@@ -164,7 +165,7 @@ mark{background:var(--acc);color:#07090f;border-radius:3px;padding:0 2px}
 .hm{aspect-ratio:1;border-radius:8px;border:1px solid var(--line);background:#141c30;color:var(--mut);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0;transition:transform var(--dur-1) var(--ease-out),border-color var(--dur-1) var(--ease-out)}
 .hm:hover{transform:scale(1.12);border-color:var(--acc)}
 .hm.done{border-color:var(--acc);color:var(--ink)}
-.hm.progress{border-color:#e5a13d}
+.hm.progress{border-color:var(--warn)}
 .mastery-bar{display:flex;height:14px;border-radius:999px;overflow:hidden;margin-top:10px;background:#141c30}
 .mastery-bar i{display:block;height:100%}
 
@@ -181,8 +182,10 @@ body.focus .marquee{display:none}
 body.focus .hero{display:none}
 
 /* Chủ đề sáng: đè biến màu + những chỗ cố định màu tối */
-body.light{--bg:#f2f4f9;--panel:#ffffff;--panel2:#f6f8fc;--line:#d9dfeb;--ink:#1a1d26;--mut:#5a6272;--acc:#557c00;--vio:#5a48e0;--red:#b03a2e}
+body.light{--bg:#f2f4f9;--panel:#ffffff;--panel2:#f6f8fc;--line:#d9dfeb;--ink:#1a1d26;--mut:#5a6272;--acc:#557c00;--vio:#5a48e0;--red:#b03a2e;--warn:#9a6210}
 body.light .btn{color:#fff}
+body.light :is(.nav button.on,.dock-launch){color:#fff}
+body.light mark,body.light ::selection{color:#fff}
 body.light .btn.ghost{color:var(--ink);border-color:var(--line)}
 body.light textarea,body.light input,body.light select{background:#fff;color:var(--ink);border-color:var(--line)}
 body.light .code{background:#fff;color:var(--ink)}
@@ -208,7 +211,7 @@ body.light .paper{border:1px solid #ddd6c6}
 .stepflow{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
 .stepflow-row{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}
 .sf-step{display:inline-flex;align-items:center;gap:6px;background:transparent;border:1px solid var(--line);border-radius:999px;padding:7px 13px;color:var(--ink);white-space:nowrap;font-size:14px;transition:border-color var(--dur-1) var(--ease-out),transform var(--dur-1) var(--ease-out)}
-.sf-step:hover{transform:translateY(-2px);border-color:#3a4767}
+.sf-step:hover{transform:translateY(-2px);border-color:var(--line-hover)}
 .sf-step.cur{background:var(--panel2);border-color:var(--acc)}
 .sf-step.next{border-color:var(--acc);color:var(--acc);font-weight:700;box-shadow:0 0 0 1px var(--acc) inset}
 .sf-arrow{color:var(--acc);font-weight:900}

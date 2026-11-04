@@ -244,7 +244,7 @@ export function AIGraderBox({ day, index, s }) {
     setBusy(false)
   }
   if (!note.trim()) return null
-  return <div className="card" style={{ marginTop: 10, borderColor: '#8b7cff' }}>
+  return <div className="card" style={{ marginTop: 10, borderColor: 'var(--vio)' }}>
     <strong>🤖 AI chấm "Bài {index + 1}" theo rubric</strong>
     <p className="mut">Kết quả là tham khảo: AI không tự tick tiêu chí, không tự nâng điểm — đọc, đối chiếu rồi bạn tự chấm.</p>
     <div className="row"><button className="btn ghost small" disabled={busy} onClick={run}>{busy ? 'AI đang chấm…' : 'Chấm bài này'}</button></div>
