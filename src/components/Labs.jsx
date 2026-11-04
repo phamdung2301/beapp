@@ -151,7 +151,10 @@ export function QuizBox({ quiz, mKey, s, patch }) {
     <strong>Câu hỏi kiểm tra hiểu</strong>
     <p>{quiz.q}</p>
     <textarea value={attempt} onChange={e => setAttempt(e.target.value)} placeholder="Đoán trước rồi mới mở đáp án — đoán sai mới là lúc học được nhiều nhất." style={{ width: '100%', minHeight: 70 }} />
-    <div className="row"><button className="btn small" onClick={() => setShow(true)}>Hiện đáp án</button></div>
+    {(() => { const w = attempt.trim() ? attempt.trim().split(/\s+/).length : 0; return <div className="row">
+      <button className="btn small" disabled={w < 5} onClick={() => setShow(true)}>{w < 5 ? `Viết dự đoán trước (còn ${5 - w} từ nữa — gõ sai cũng được)` : 'Hiện đáp án'}</button>
+      {w < 5 && <button className="btn ghost small" onClick={() => setShow(true)}>Bỏ qua, hiện luôn</button>}
+    </div> })()}
     {show && <><p><strong>Đáp án:</strong> {quiz.answer}</p><p><strong>Vì sao:</strong> {quiz.why}</p>
       <div className="row"><button className="btn small" onClick={() => mark(true)}>Tôi trả lời đúng ✓</button><button className="btn ghost small" onClick={() => mark(false)}>Tôi trả lời sai, cần ôn lại</button></div></>}
   </div>

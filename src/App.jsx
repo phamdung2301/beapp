@@ -275,17 +275,12 @@ function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, 
     <div className="eyebrow">Ngày {day.id} · Tuần {day.week} {day.isCheckpoint ? '· Checkpoint' : ''}</div>
     <h2 style={{ fontSize: 34, letterSpacing: '-.03em', margin: '6px 0' }}>{day.title}</h2>
     <p className="mut">{day.goal}</p>
-    <p className="mut">Bài tập: {pr.notesCount}/{day.exercises.length} đã có ghi chú · Tiêu chí: {pr.ticked}/{pr.totalCriteria} đã tick · {pomo.run ? `Pomodoro đang chạy ${String(Math.floor(pomo.sec / 60)).padStart(2, '0')}:${String(pomo.sec % 60).padStart(2, '0')}` : 'Pomodoro đang dừng'}</p>
+    {(pr.notesCount > 0 || pr.ticked > 0) && <p className="mut">Bài tập: {pr.notesCount}/{day.exercises.length} đã có ghi chú · Tiêu chí: {pr.ticked}/{pr.totalCriteria} đã tick · {pomo.run ? `Pomodoro đang chạy ${String(Math.floor(pomo.sec / 60)).padStart(2, '0')}:${String(pomo.sec % 60).padStart(2, '0')}` : 'Pomodoro đang dừng'}</p>}
     <StepFlow day={day} s={s} curTab={tab} onJump={setTab} />
-    <div className="row tabrow">
-      <button className={tab === 'learn' ? 'btn small' : 'btn ghost small'} onClick={() => setTab('learn')}>Học</button>
-      <button className={tab === 'do' ? 'btn small' : 'btn ghost small'} onClick={() => setTab('do')}>Làm bài tập</button>
-      <button className={tab === 'flash' ? 'btn small' : 'btn ghost small'} onClick={() => setTab('flash')}>Flashcard ôn tập</button>
-      <button className={tab === 'check' ? 'btn small' : 'btn ghost small'} onClick={() => setTab('check')}>Tự chấm</button>
-      <button className={tab === 'explain' ? 'btn small' : 'btn ghost small'} onClick={() => setTab('explain')}>Giải thích khái niệm</button>
-      <button className={tab === 'lab' ? 'btn small' : 'btn ghost small'} onClick={() => setTab('lab')}>Lab thực hành</button>
+    <div className="row" style={{ marginTop: 8 }}>
       <button className="btn ghost small" onClick={() => go('prompt')}>🤖 Prompt cho agent</button>
       <button className="btn ghost small" onClick={() => window.print()}>In / Lưu PDF ngày này</button>
+      <span className="mut">Phím tắt 1–6: nhảy bước</span>
     </div>
     {toast && <div className="banner" role="status">{toast}</div>}
     {tab === 'learn' && <div className="paper" style={{ marginTop: 16 }}>
@@ -359,10 +354,6 @@ function DayView({ day, go, p, pomo, onTogglePomo, onResetPomo, onSetPomo, tab, 
       <button className="btn ghost small" onClick={() => go('timeline')}>Về Timeline</button>
       {next && <button className="btn small" onClick={() => go('day', next.id)}>Ngày {next.id} →</button>}
     </div>
-    <div className="row" style={{ marginTop: 20 }}>
-      {prev && <button className="btn ghost" onClick={() => go('day', prev.id)}>← Ngày {prev.id}: {prev.title}</button>}
-      {next && <button className="btn" onClick={() => go('day', next.id)}>Ngày {next.id}: {next.title} →</button>}
-    </div>
   </div>
 }
 // Thẻ flashcard 3 chế độ, cùng một lịch SM-2 theo khái niệm:
@@ -418,7 +409,8 @@ function Flashcards({ day, s, patch }) {
   }
   if (done || pos >= queue.length) {
     const unknownIdx = cards.map((_, i) => i).filter(i => s.srs?.[`${day.id}-${cards[i].idx}`]?.status === 'unknown')
-    return <div className="card" style={{ marginTop: 16 }}><h3>Đã ôn hết {cards.length} thẻ</h3><p>{unknownIdx.length} thẻ chưa thuộc. Bấm dưới đây để ôn lại đúng các thẻ đó.</p><button className="btn" disabled={unknownIdx.length === 0} onClick={() => { setQueue(unknownIdx); setPos(0); setFlip(false); setDone(false) }}>Ôn lại các thẻ chưa thuộc</button> <button className="btn ghost" onClick={() => reset()}>Ôn lại từ đầu</button></div>
+    const unmarked = cards.filter(cd => !s.srs2?.[`${day.id}-${cd.idx}`]).length
+    return <div className="card" style={{ marginTop: 16 }}><h3>Đã ôn hết {cards.length} thẻ</h3><p>{unknownIdx.length} thẻ chưa thuộc{unmarked > 0 ? `, ${unmarked} thẻ chưa chấm lần nào — ôn lại từ đầu để xếp lịch SM-2 cho đủ bộ` : ''}. Bấm dưới đây để ôn lại đúng các thẻ đó.</p><button className="btn" disabled={unknownIdx.length === 0} onClick={() => { setQueue(unknownIdx); setPos(0); setFlip(false); setDone(false) }}>Ôn lại các thẻ chưa thuộc</button> <button className="btn ghost" onClick={() => reset()}>Ôn lại từ đầu</button></div>
   }
   if (!card) return null
   const srs = s.srs2?.[`${day.id}-${card.idx}`] || s.srs?.[`${day.id}-${card.idx}`]
@@ -448,7 +440,7 @@ function Flashcards({ day, s, patch }) {
       <div className="flash-face flash-back"><div className="eyebrow">Giải thích</div><p>{card.back}</p>{mode === 'term' && card.thresholds && <p className="mut">🚦 Ngưỡng: {card.thresholds}</p>}{mode === 'term' && card.dontUse && <p className="mut">🚫 Không dùng khi: {card.dontUse}</p>}</div>
     </div></div>
     <div className="row" style={{ marginTop: 12 }}><button className="btn ghost small" onClick={() => { setPos(Math.max(0, pos - 1)); setFlip(false) }}>← Thẻ trước</button><button className="btn small" onClick={() => { if (pos + 1 >= queue.length) setDone(true); else setPos(pos + 1); setFlip(false) }}>Thẻ sau →</button>
-      <button className="btn small" onClick={() => mark(true)}>Đã thuộc ✓</button>
+      <button className="btn small" disabled={!flip} title={flip ? '' : 'Lật thẻ, tự trả lời trước rồi mới chấm'} onClick={() => mark(true)}>Đã thuộc ✓</button>
       <button className="btn ghost small" onClick={() => mark(false)}>Chưa thuộc, ôn lại</button></div>
     <p className="mut">{srs ? `Ôn lại vào: ${fmtDate(srs.due)} (${srs.status === 'unknown' ? 'chưa thuộc' : 'đã thuộc'}${srs.interval ? `, khoảng ${srs.interval} ngày` : ''}).` : 'Chưa đánh dấu thẻ này.'} Phím tắt: ← → chuyển thẻ, Space/Enter lật thẻ.</p>
   </div>
