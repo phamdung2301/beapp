@@ -26,7 +26,11 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,json}'],
-        navigateFallback: 'index.html'
+        navigateFallback: 'index.html',
+        runtimeCaching: [
+          { urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/, handler: 'StaleWhileRevalidate', options: { cacheName: 'google-fonts-styles', expiration: { maxEntries: 8, maxAgeSeconds: 60 * 60 * 24 * 30 } } },
+          { urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/, handler: 'CacheFirst', options: { cacheName: 'google-fonts-files', expiration: { maxEntries: 16, maxAgeSeconds: 60 * 60 * 24 * 365 }, cacheableResponse: { statuses: [0, 200] } } }
+        ]
       }
     })
   ]

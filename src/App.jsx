@@ -92,7 +92,7 @@ class Boundary extends React.Component {
 }
 function Ring({ pct }) {
   const r = 52, c = 2 * Math.PI * r
-  return <svg className="ring" viewBox="0 0 120 120" aria-label={`Hoàn thành ${pct}%`}><circle cx="60" cy="60" r={r} fill="none" stroke="#1a2338" strokeWidth="10" /><circle cx="60" cy="60" r={r} fill="none" stroke="#c6f24e" strokeWidth="10" strokeDasharray={c} strokeDashoffset={c * (1 - pct / 100)} strokeLinecap="round" transform="rotate(-90 60 60)" /><text x="60" y="66" textAnchor="middle" fill="#eaf0ff" fontSize="22" fontWeight="900">{pct}%</text></svg>
+  return <svg className="ring" viewBox="0 0 120 120" aria-label={`Hoàn thành ${pct}%`}><circle cx="60" cy="60" r={r} fill="none" stroke="var(--line)" strokeWidth="10" /><circle cx="60" cy="60" r={r} fill="none" stroke="var(--acc)" strokeWidth="10" strokeDasharray={c} strokeDashoffset={c * (1 - pct / 100)} strokeLinecap="round" transform="rotate(-90 60 60)" /><text x="60" y="66" textAnchor="middle" fill="var(--ink)" fontSize="22" fontWeight="900">{pct}%</text></svg>
 }
 function PomodoroCard({ pomo, onToggle, onReset, onSet }) {
   const mm = String(Math.floor(pomo.sec / 60)).padStart(2, '0'), ss = String(pomo.sec % 60).padStart(2, '0')
@@ -120,6 +120,7 @@ function Dashboard({ go, s }) {
   return <div>
     <section className="hero reveal"><div className="aurora" aria-hidden="true"><i /><i /></div>
       <React.Suspense fallback={null}><GalaxyHero done={s.done} onSelect={id => go('day', id)} paused={!!s.motionPaused} /></React.Suspense>
+      <div className="hero-scrim" aria-hidden="true" />
       <div className="hero-content">
       <div className="eyebrow">01 / Lộ trình · Java Backend Senior</div>
       <h1>Học sâu, <em>làm thật,</em><br />chấm thật.</h1>
@@ -128,10 +129,9 @@ function Dashboard({ go, s }) {
     </div></section>
     <div className="marquee" aria-hidden="true"><div>{'JVM · Spring Boot · REST · DTO · SQL · JPA · MongoDB · Redis · Kafka · Saga · Resilience · CAP · DDD · OAuth2 · Observability · Docker · Testing · ADR · '.repeat(3)}</div></div>
     <div className="grid">
-      <div className="card reveal"><Ring pct={pct} /><p><strong>{doneCount}/30 ngày đã xong · {exDone}/{exTotal} bài tập đã có ghi chú</strong><br /><span className="mut">Streak: {streakOf(s.done)} ngày · Điểm tự chấm trung bình: {avg}/5 · Pomodoro đã xong: {s.pomodoroDone || 0} phiên{s.pomodoroMinutes ? ` (${s.pomodoroMinutes} phút tập trung)` : ''}{s.pomodoroInterrupted ? `, ${s.pomodoroInterrupted} phiên dở` : ''}</span></p><p className="mut">Thông thạo (từ quiz + lab + teach-back, không phải tick): {ms.ok}/{ms.total} khái niệm luyện được, trong đó {ms.explained} giải thích được.{ms.weak.length > 0 && <> Điểm yếu nhất: {ms.weak.map(w => `Ngày ${w.day.id} — ${w.concept.t}`).join('; ')}.</>}</p>
+      <div className="card reveal"><Ring pct={pct} /><p><strong>{doneCount}/30 ngày đã xong · {exDone}/{exTotal} bài tập đã có ghi chú</strong></p><div className="row" style={{ margin: '2px 0 8px' }}><span className="tag">🔥 Streak {streakOf(s.done)} ngày</span><span className="tag">Điểm TB {avg}/5</span><span className="tag">⏱ {s.pomodoroDone || 0} phiên{s.pomodoroMinutes ? ` · ${s.pomodoroMinutes} phút` : ''}</span></div><p className="mut">Thông thạo (từ quiz + lab + teach-back, không phải tick): {ms.ok}/{ms.total} khái niệm luyện được, trong đó {ms.explained} giải thích được.{ms.weak.length > 0 && <> Điểm yếu nhất: {ms.weak.map(w => `Ngày ${w.day.id} — ${w.concept.t}`).join('; ')}.</>}</p>
         <div className="mastery-bar" aria-label="Phân bố mức thông thạo">{MASTERY_LEVELS.map(lv => { const n = ms.lvCounts?.[lv.id] || 0; return <i key={lv.id} style={{ width: (n / Math.max(1, ms.total) * 100) + '%', background: lv.color }} title={`${lv.id}: ${n} khái niệm`} /> })}</div>
-        <div className="row" style={{ marginTop: 6 }}>{MASTERY_LEVELS.map(lv => <small key={lv.id} className="mut" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><i style={{ width: 10, height: 10, borderRadius: 3, background: lv.color, display: 'inline-block' }} />{lv.id} ({ms.lvCounts?.[lv.id] || 0})</small>)}</div>
-        <div className="progress" style={{ marginTop: 10 }}><i style={{ width: pct + '%' }} /></div></div>
+        <div className="row" style={{ marginTop: 6 }}>{MASTERY_LEVELS.map(lv => <small key={lv.id} className="mut" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><i style={{ width: 10, height: 10, borderRadius: 3, background: lv.color, display: 'inline-block' }} />{lv.id} ({ms.lvCounts?.[lv.id] || 0})</small>)}</div></div>
       <div className="card reveal"><div className="eyebrow">Hôm nay nên học</div><h3>Ngày {next.id} — {next.title}</h3><p className="mut">{next.goal}</p>
         {s.startDate && <p className="mut">Lịch của bạn: Ngày 1 = {fmtDate(s.startDate)}, Ngày 7 = {fmtDate(addDays(s.startDate, 6))}, Ngày 30 = {fmtDate(addDays(s.startDate, 29))}.</p>}
         <button className="btn small" onClick={() => go('day', next.id)}>Vào ngày này</button></div>
@@ -139,10 +139,10 @@ function Dashboard({ go, s }) {
         {due.length ? due.slice(0, 6).map((r, i) => <p key={i}>{r.concept ? `Ngày ${r.day.id} — ${r.concept.t} ` : `Ngày ${r.day.id} — ${r.day.title} `}<span className="mut">({r.reason}{r.due ? `, hẹn ${fmtDate(r.due)}` : ''})</span> <button className="btn ghost small" onClick={() => go('day', r.day.id, undefined, r.tab)}>Ôn</button></p>)
           : <p className="mut">Chưa có thẻ nào đến hạn ôn. Đánh dấu thẻ là “Chưa thuộc” ở Flashcard thì nó sẽ hiện ở đây theo lịch SM-2.</p>}
         <button className="btn ghost small" onClick={() => go('review')}>Xem tất cả →</button></div>
-      <div className="card reveal"><div className="eyebrow">Cài app lên laptop</div><p>Mở web này bằng Chrome hoặc Edge, chọn Install app / Cài đặt ứng dụng. Biểu tượng sẽ xuất hiện ngoài desktop và taskbar, mở thành cửa sổ riêng và chạy offline.</p><button className="btn ghost small" onClick={() => go('settings')}>Hướng dẫn cài đặt</button></div>
+      <div className="card reveal"><div className="eyebrow">Prompt cho agent</div><p>Sinh prompt backend chuẩn BEApp cho Cursor/Claude Code: theo từng ngày lý thuyết hoặc prompt tổng cả dự án, xuất .md.</p><button className="btn ghost small" onClick={() => go('prompt')}>Mở Prompt Agent →</button></div>
     </div>
     <h2 style={{ marginTop: 28 }}>Bản đồ 30 ngày</h2>
-    <div className="card reveal"><div className="heatmap">{ALL_DAYS.map(d => { const pr = dayProgress(s, d); const sc = s.scores[d.id]; return <button key={d.id} className={`hm ${s.done[d.id] ? 'done' : pr.inProgress ? 'progress' : ''}`} style={sc !== undefined ? { background: `rgba(198,242,78,${(0.08 + sc * 0.14).toFixed(2)})` } : undefined} title={`Ngày ${d.id}: ${d.title}${sc !== undefined ? ` · tự chấm ${sc}/5` : ''}`} onClick={() => go('day', d.id)}>{d.id}</button> })}</div><p className="mut">Màu càng đậm = điểm tự chấm càng cao. Viền xanh = đã xong, viền cam = đang làm dở. Bấm vào ô để vào ngày đó.</p></div>
+    <div className="card reveal"><div className="heatmap">{ALL_DAYS.map(d => { const pr = dayProgress(s, d); const sc = s.scores[d.id]; return <button key={d.id} className={`hm ${s.done[d.id] ? 'done' : pr.inProgress ? 'progress' : ''}`} style={sc !== undefined ? { background: `rgba(198,242,78,${(0.08 + sc * 0.14).toFixed(2)})`, color: sc >= 3 ? '#07090f' : undefined } : undefined} title={`Ngày ${d.id}: ${d.title}${sc !== undefined ? ` · tự chấm ${sc}/5` : ''}`} onClick={() => go('day', d.id)}>{d.id}</button> })}</div><p className="mut">Màu càng đậm = điểm tự chấm càng cao. Viền xanh = đã xong, viền cam = đang làm dở. Bấm vào ô để vào ngày đó.</p></div>
     <h2 style={{ marginTop: 28 }}>5 tuần, nhìn 1 lần là nhớ</h2>
     <div className="grid">{WEEKS.map(w => <div className="card reveal" key={w.n}><div className="eyebrow">Tuần {w.n}</div><h3>{w.name}</h3><p className="mut">Ngày {w.days[0]}–{w.days[w.days.length - 1]} · {w.days.filter(id => s.done[id]).length}/{w.days.length} ngày xong</p><button className="btn ghost small" onClick={() => go('timeline', undefined, w.n)}>Xem tuần này</button></div>)}</div>
   </div>
