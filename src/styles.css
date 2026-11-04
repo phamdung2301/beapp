@@ -1,7 +1,13 @@
-:root{--bg:#07090f;--panel:#0e1424;--panel2:#121b31;--line:#232b3f;--ink:#eaf0ff;--mut:#93a0be;--acc:#c6f24e;--vio:#8b7cff;--red:#ff7a7a;--radius:18px}
+:root{--bg:#07090f;--panel:#0e1424;--panel2:#121b31;--line:#232b3f;--ink:#eaf0ff;--mut:#93a0be;--acc:#c6f24e;--vio:#8b7cff;--red:#ff7a7a;--radius:18px;
+/* Motion tokens (motion-ui-awwwards + game-motion): ease-out cho arrival, spring cho "alive", power-in cho departure */
+--ease-out:cubic-bezier(.22,1,.36,1);--ease-spring:cubic-bezier(.34,1.56,.64,1);--ease-in:cubic-bezier(.55,0,.79,.36);--dur-1:.18s;--dur-2:.34s;--dur-3:.6s}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Arial,Helvetica,sans-serif;line-height:1.6}
+/* Grain texture rất nhẹ — chất dark exhibition, không đè lên chữ */
+body::after{content:"";position:fixed;inset:0;z-index:100;pointer-events:none;opacity:.035;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.6'/%3E%3C/svg%3E")}
+::selection{background:var(--acc);color:#07090f}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:4px}
 a{color:var(--acc)}
 button,input,textarea,select{font:inherit}
 button{cursor:pointer}
@@ -66,8 +72,14 @@ details summary{cursor:pointer;font-weight:700}
 /* Reveal giữ nguyên để không làm mờ chữ khi chụp headless/virtual-time:
    motion chính vẫn có ở aurora, marquee, hover card và view fade. */
 .reveal.in{opacity:1;transform:none}
-.view{animation:fade .35s}
-@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.view{animation:fade var(--dur-3) var(--ease-out)}
+@keyframes fade{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+/* Stagger vào view: các card nối tiếp nhau 40ms — cảm giác "mở màn", không đồng loạt */
+.view .card{animation:rise var(--dur-3) var(--ease-out) both}
+.view .card:nth-child(2){animation-delay:.05s}.view .card:nth-child(3){animation-delay:.1s}.view .card:nth-child(4){animation-delay:.15s}.view .card:nth-child(n+5){animation-delay:.2s}
+@keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+/* Nút tạm dừng chuyển động (a11y): giữ nguyên frame đang đứng, không display:none */
+body.motion-paused *,body.motion-paused *::before,body.motion-paused *::after{animation-play-state:paused!important;transition-duration:.01ms!important}
 .flash{perspective:1000px;cursor:pointer}
 .flash-in{position:relative;transform-style:preserve-3d;transition:transform .5s;min-height:200px}
 .flash.flipped .flash-in,.flash-in.flipped{transform:rotateY(180deg)}
@@ -79,7 +91,7 @@ label{display:block;margin:10px 0 4px;font-weight:700}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 footer{color:var(--mut);font-size:14px;border-top:1px solid var(--line);margin-top:40px;padding-top:16px}
 @media(max-width:600px){.hero{padding:24px 18px}.nav{margin-left:0}}
-@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+@media(prefers-reduced-motion:reduce){*{animation-play-state:paused!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
 
 /* Nâng cấp P0/P1/P2: tab cuộn ngang, điều hướng dính, code, tô sáng, in ấn, thẻ flash cuộn */
 .tabrow{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}

@@ -598,8 +598,9 @@ export default function App() {
   useEffect(() => {
     document.body.classList.toggle('light', (s.theme || 'dark') === 'light')
     document.body.classList.toggle('focus', !!s.focusMode)
+    document.body.classList.toggle('motion-paused', !!s.motionPaused)
     document.body.style.zoom = s.fontScale && s.fontScale !== 1 ? String(s.fontScale) : ''
-  }, [s.theme, s.fontScale, s.focusMode])
+  }, [s.theme, s.fontScale, s.focusMode, s.motionPaused])
   // Phím tắt toàn app: / tìm kiếm, 1–6 đổi tab ngày, Esc đóng dock. Không ăn khi đang gõ.
   useEffect(() => {
     const h = (e) => {
@@ -664,6 +665,7 @@ export default function App() {
     <header className="topbar"><div className="topbar-in"><div className="logo">BE<span>App</span> <small style={{ fontSize: 13, color: '#93a0be' }}>· 30 ngày Backend Senior</small></div>
       <nav className="nav"><button className={view === 'home' ? 'on' : ''} onClick={() => go('home')}>Trang chính</button><button className={view === 'timeline' ? 'on' : ''} onClick={() => go('timeline')}>Timeline</button><button className={view === 'review' ? 'on' : ''} onClick={() => go('review')}>Hôm nay ôn gì</button><button className={view === 'mock' ? 'on' : ''} onClick={() => go('mock')}>Phỏng vấn</button><button className={view === 'prompt' ? 'on' : ''} onClick={() => go('prompt')}>Prompt Agent</button><button className={view === 'search' ? 'on' : ''} onClick={() => go('search')}>Tìm kiếm</button><button className={view === 'settings' ? 'on' : ''} onClick={() => go('settings')}>Cài đặt</button></nav>
       <button className={`focus-toggle ${s.focusMode ? 'on' : ''}`} title="Chế độ tập trung: ẩn điều hướng, tự chạy Pomodoro khi vào ngày học, hết phiên nhảy vào bài tập" onClick={() => patch({ focusMode: !s.focusMode })}>🎯 {s.focusMode ? 'Tắt tập trung' : 'Tập trung'}</button>
+      <button className={`focus-toggle ${s.motionPaused ? 'on' : ''}`} title="Tạm dừng mọi chuyển động và hiệu ứng (tiện ích tiếp cận)" aria-label="Tạm dừng chuyển động" onClick={() => patch({ motionPaused: !s.motionPaused })}>{s.motionPaused ? '▶ Chuyển động' : '⏸ Dừng chuyển động'}</button>
     </div></header>
     <main className="wrap view" key={view}>
       {(() => {
