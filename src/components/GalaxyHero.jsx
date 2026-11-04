@@ -3,9 +3,10 @@ import { DAYS } from '../data/days.js'
 
 // Knowledge Galaxy — chữ ký hero của BEApp: 30 ngày học là 30 node phát sáng
 // trên 5 vòng quỹ đạo tuần. Kéo để xoay, bấm node để vào ngày đó.
-// Theo threejs-web-3d: lazy import three, DPR cap, pause chồng (offscreen + tab ẩn
-// + reduced-motion + nút dừng chuyển động), lerp mọi chuyển động, dispose đủ,
-// không WebGL thì trả null (CSS aurora nền vẫn hiển thị). Canvas chỉ trang trí.
+// Theo threejs-web-3d: lazy import three, DPR cap, cap 30fps, pause chồng
+// (offscreen + tab ẩn + reduced-motion + nút dừng chuyển động), sleep khi tĩnh,
+// lerp mọi chuyển động, dispose đủ, không WebGL → trả null (CSS aurora nền).
+// Canvas chỉ trang trí (aria-hidden); điều hướng thật là DOM list.
 
 const WEEK_COLORS = ['#c6f24e', '#8b7cff', '#4ee0f2', '#ffb84e', '#ff7a9e']
 const RADII = [2.6, 3.4, 4.2, 5.0, 5.8]
@@ -15,8 +16,25 @@ function GalaxyHost({ done, onSelect, paused }) {
   const tip = useRef(null)
   const pause = useRef(paused)
   const selectRef = useRef(onSelect)
-  useEffect(() => { pause.current = paused }, [paused])
+  const doneRef = useRef(done)
+  // refs vào scene để đổi trạng thái node IN-PLACE, không dựng lại renderer
+  const sceneRefs = useRef(null)
+  const startLoopRef = useRef(null)
+
+  useEffect(() => { pause.current = paused; if (!paused) startLoopRef.current?.() }, [paused])
   useEffect(() => { selectRef.current = onSelect }, [onSelect])
+
+  // done đổi (xong thêm ngày) → chỉ đổi material node, không rebuild scene
+  useEffect(() => {
+    doneRef.current = done
+    const R = sceneRefs.current
+    if (!R) return
+    R.nodes.forEach(n => {
+      const d = doneRef.current[n.userData.dayId]
+      n.material = d ? R.doneMat : R.mats[n.userData.week]
+      n.userData.baseScale = d ? 1.35 : 1
+    })
+  }, [done])
 
   useEffect(() => {
     const el = host.current
@@ -25,7 +43,6 @@ function GalaxyHost({ done, onSelect, paused }) {
     if (new URLSearchParams(location.search).has('no3d')) return
     let disposed = false
     let cleanup = null
-    // three lazy-load: chunk riêng, không nằm trong bundle chính
     import('three').then(THREE => {
       if (disposed) return
       let renderer
@@ -38,6 +55,7 @@ function GalaxyHost({ done, onSelect, paused }) {
       const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100)
       camera.position.set(0, 2.4, 7.6)
       camera.lookAt(0, -0.2, 0)
+      camera.updateMatrixWorld()
 
       const world = new THREE.Group()
       scene.add(world)
@@ -54,13 +72,11 @@ function GalaxyHost({ done, onSelect, paused }) {
         const r = RADII[week]
         const mesh = new THREE.Mesh(geo, mats[week])
         mesh.position.set(Math.cos(angle) * r, 0, Math.sin(angle) * r)
-        mesh.userData = { dayId: d.id, title: d.title, baseScale: 1, phase: angle * 3 }
-        if (done[d.id]) { mesh.material = doneMat; mesh.userData.baseScale = 1.35 }
+        mesh.userData = { dayId: d.id, title: d.title, baseScale: 1, phase: angle * 3, week }
         world.add(mesh)
         nodes.push(mesh)
       })
 
-      // Vòng quỹ đạo mờ theo tuần
       const ringGeos = []
       RADII.forEach((r, w) => {
         const pts = []
@@ -81,21 +97,27 @@ function GalaxyHost({ done, onSelect, paused }) {
         camera.aspect = w / h
         camera.updateProjectionMatrix()
       }
-      const ro = new ResizeObserver(resize); ro.observe(el)
+      const ro = new ResizeObserver(() => { resize(); startLoop() })
+      ro.observe(el)
       let visible = true
-      const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting }); io.observe(el)
+      const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting; if (visible) startLoop() }); io.observe(el)
 
       // Tương tác: kéo xoay (lerp), hover raycast, bấm node → vào ngày
       let targetX = 0, targetY = 0.15, curX = 0, curY = 0.15, dragging = false, moved = 0
       let lastPX = 0, lastPY = 0, hover = null
       let pointerPX = -1, pointerPY = -1
+      const raycaster = new THREE.Raycaster()
+      const ndc = new THREE.Vector2()
       const toNDC = (px, py) => {
         const rect = el.getBoundingClientRect()
         return [(px - rect.left) / rect.width * 2 - 1, -((py - rect.top) / rect.height) * 2 + 1]
       }
-      const down = e => { dragging = true; moved = 0; lastPX = e.clientX; lastPY = e.clientY }
+      const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches
+
+      const down = e => { dragging = true; moved = 0; lastPX = e.clientX; lastPY = e.clientY; startLoop() }
       const move = e => {
         pointerPX = e.clientX; pointerPY = e.clientY
+        startLoop()
         if (dragging) {
           moved += Math.abs(e.clientX - lastPX) + Math.abs(e.clientY - lastPY)
           targetY += (e.clientX - lastPX) * 0.005
@@ -104,9 +126,14 @@ function GalaxyHost({ done, onSelect, paused }) {
           lastPX = e.clientX; lastPY = e.clientY
         }
       }
-      const up = () => {
+      const up = e => {
         dragging = false
-        if (moved < 8 && hover && selectRef.current) selectRef.current(hover.userData.dayId)
+        if (moved >= 8 || !selectRef.current) return
+        // Touch tap không có pointermove trước đó → raycast ngay tại điểm nhấc tay
+        const [nx, ny] = toNDC(e.clientX, e.clientY)
+        ndc.set(nx, ny); raycaster.setFromCamera(ndc, camera)
+        const hit = raycaster.intersectObjects(nodes)[0]?.object || null
+        if (hit) selectRef.current(hit.userData.dayId)
       }
       const leave = () => { pointerPX = -1; if (tip.current) tip.current.style.display = 'none' }
       el.addEventListener('pointerdown', down)
@@ -114,29 +141,30 @@ function GalaxyHost({ done, onSelect, paused }) {
       window.addEventListener('pointerup', up)
       el.addEventListener('pointerleave', leave)
 
-      const raycaster = new THREE.Raycaster()
-      const ndc = new THREE.Vector2()
-      const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches
-
-      let frame = 0, last = performance.now(), drawLast = 0, drawCount = 0
+      let frame = 0, last = performance.now(), drawLast = 0, drawCount = 0, rafOn = false
+      const stopLoop = () => { if (rafOn) { cancelAnimationFrame(frame); rafOn = false } }
+      startLoopRef.current = startLoop
+      function startLoop() {
+        if (rafOn || disposed) return
+        rafOn = true
+        last = performance.now()
+        frame = requestAnimationFrame(render)
+      }
       const render = now => {
         frame = requestAnimationFrame(render)
         if (now - drawLast < 33) return // cap ~30fps — WebGL trang trí không cần 60
         drawLast = now
         const dt = Math.min((now - last) / 1000, 1 / 30); last = now
-        // Offscreen / tab ẩn: vẫn giữ loop nhưng bỏ qua công việc
         if (!visible || document.hidden) return
         const frozen = pause.current || reduced()
         if (!dragging && !frozen) targetY += dt * 0.09 // idle spin chậm
         curX += (targetX - curX) * 0.035 // lerp — "đắt" của chuyển động
         curY += (targetY - curY) * 0.035
         world.rotation.x = curX; world.rotation.y = curY
-        // Node thở nhẹ + node hover phóng to (squash không cần, giữ trọng lượng)
         nodes.forEach(n => {
           const breathe = frozen ? 1 : 1 + Math.sin(now / 900 + n.userData.phase) * 0.06
           n.scale.setScalar((hover === n ? 1.9 : 1) * n.userData.baseScale * breathe)
         })
-        // Hover: raycast mỗi frame khi có pointer trong canvas; tooltip chiếu vị trí node cùng frame
         const rayEl = renderer.domElement
         if (pointerPX >= 0 && !dragging) {
           const [nx, ny] = toNDC(pointerPX, pointerPY)
@@ -149,7 +177,6 @@ function GalaxyHost({ done, onSelect, paused }) {
             const rect = el.getBoundingClientRect()
             const px = (v.x * 0.5 + 0.5) * rect.width
             const py = (-v.y * 0.5 + 0.5) * rect.height
-            hit.userData.px = px; hit.userData.py = py
             tip.current.textContent = `Ngày ${hit.userData.dayId} · ${hit.userData.title}`
             tip.current.style.display = 'block'
             tip.current.style.left = Math.min(rect.width - 40, Math.max(4, px)) + 'px'
@@ -157,20 +184,37 @@ function GalaxyHost({ done, onSelect, paused }) {
           } else if (tip.current) tip.current.style.display = 'none'
         }
         drawCount++
-        try { renderer.render(scene, camera) } catch { /* context lost — dừng vẽ, loop giữ nguyên */ }
+        try { renderer.render(scene, camera) } catch { stopLoop(); return }
+        // Ngủ khi tĩnh: frozen + không pointer → dừng rAF, mọi input đều startLoop()
+        if (frozen && pointerPX < 0 && !dragging) stopLoop()
       }
-      renderer.domElement.addEventListener('webglcontextlost', e => { e.preventDefault(); cancelAnimationFrame(frame) })
+      const onVis = () => { if (!document.hidden) startLoop() }
+      const onCtxLost = e => { e.preventDefault(); stopLoop() }
+      const onCtxRestored = () => { resize(); startLoop() }
+      renderer.domElement.addEventListener('webglcontextlost', onCtxLost)
+      renderer.domElement.addEventListener('webglcontextrestored', onCtxRestored)
+      document.addEventListener('visibilitychange', onVis)
       resize()
-      frame = requestAnimationFrame(render)
-      if (import.meta.env.DEV) window.__galaxy = { nodes, world, camera, project: n => n.position.clone().applyMatrix4(world.matrixWorld).project(camera), getStats: () => ({ drawCount, visible, curX: curX.toFixed(2), curY: curY.toFixed(2) }) }
+      startLoop()
+      sceneRefs.current = { nodes, mats, doneMat }
+      // áp trạng thái done đã lưu lúc mount
+      nodes.forEach(n => {
+        const d = doneRef.current[n.userData.dayId]
+        if (d) { n.material = doneMat; n.userData.baseScale = 1.35 }
+      })
+      if (import.meta.env.DEV) window.__galaxy = { nodes, world, camera, project: n => n.position.clone().applyMatrix4(world.matrixWorld).project(camera), getStats: () => ({ drawCount, rafOn, visible, curX: curX.toFixed(2), curY: curY.toFixed(2) }) }
 
       cleanup = () => {
-        cancelAnimationFrame(frame)
+        disposed = true
+        stopLoop()
         ro.disconnect(); io.disconnect()
         el.removeEventListener('pointerdown', down)
         el.removeEventListener('pointermove', move)
         window.removeEventListener('pointerup', up)
         el.removeEventListener('pointerleave', leave)
+        document.removeEventListener('visibilitychange', onVis)
+        renderer.domElement.removeEventListener('webglcontextlost', onCtxLost)
+        renderer.domElement.removeEventListener('webglcontextrestored', onCtxRestored)
         geo.dispose(); doneMat.dispose(); mats.forEach(m => m.dispose())
         ringGeos.forEach(g => g.dispose())
         world.traverse(o => { if (o.material) o.material.dispose() })
@@ -179,7 +223,7 @@ function GalaxyHost({ done, onSelect, paused }) {
     }).catch(() => { /* import lỗi → giữ CSS */ })
 
     return () => { disposed = true; if (cleanup) cleanup() }
-  }, [done]) // done đổi khi người học xong thêm ngày — dựng lại màu node
+  }, [])
 
   return <div ref={host} className="galaxy" aria-hidden="true" style={{ position: 'absolute', inset: 0, cursor: 'grab' }}>
     <div ref={tip} style={{ display: 'none', position: 'absolute', zIndex: 5, background: '#0e1424', border: '1px solid var(--line)', borderRadius: 8, padding: '3px 9px', fontSize: 12, color: 'var(--ink)', pointerEvents: 'none', whiteSpace: 'nowrap' }} />

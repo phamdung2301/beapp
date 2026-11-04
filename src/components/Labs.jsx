@@ -208,7 +208,7 @@ export function LabView({ day, s, patch }) {
       <p className="mut">5 lab gắn với phần cần thiết nhất của ngày này: sửa code lỗi thật, điền khung code, đoán trước khi mở đáp án, ra quyết định, và chạy lệnh trong terminal mô phỏng.</p>
       {labs !== null && <p className="mut">{labs.length}/5 lab{labs.length !== 5 ? ' — cảnh báo: dữ liệu lab chưa đủ 5 cho ngày này.' : ''} Mỗi lab có gia sư AI bám bài (bật ở Cài đặt → AI Gia sư). Lab SQL có nút chạy thật bằng SQLite trong trình duyệt. Làm được thì bấm "Tôi làm được" — app ghi vào tiến độ thông thạo của bạn.</p>}
     </div>
-    {labs === null && <div className="card"><p className="mut">Đang tải lab ngày {day.id}… (chunk riêng, lần đầu cần tải một lần rồi PWA cache lại)</p><div className="progress"><i style={{ width: '35%' }} /></div></div>}
+    {labs === null && <div className="card"><p className="mut">Đang tải lab ngày {day.id}… (chunk riêng, lần đầu cần tải một lần rồi PWA cache lại)</p><div className="progress"><i style={{ transform: 'scaleX(.35)' }} /></div></div>}
     {labs !== null && labs.map(lab => {
       const ci = day.concepts.findIndex(c => c.t === lab.concept)
       const mKey = ci >= 0 ? `${day.id}-${ci}` : `lab-${lab.id}`
